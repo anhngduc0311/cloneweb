@@ -281,7 +281,7 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
         return Regex.Replace(input, "<.*?>", string.Empty).Trim();
     }
 
-    private List<MangaCard> ParseGridHtml(string html)
+    private List<MangaCard> ParseGridHtml(string html, string defaultCountry = "ja")
     {
         var items = new List<MangaCard>();
         var liMatches = Regex.Matches(html, @"<li>\s*<div class=""book_avatar"">([\s\S]*?)<\/li>");
@@ -318,7 +318,20 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
             int.TryParse(followMatch.Groups[1].Value.Replace(",", ""), out var follows);
 
             var tagMatches = Regex.Matches(block, @"<p class=""blue"">([^<]+)<\/p>");
-            var genres = tagMatches.Select(t => t.Groups[1].Value.Trim()).Where(g => !string.IsNullOrEmpty(g)).ToArray();
+            var genresList = tagMatches.Select(t => t.Groups[1].Value.Trim()).Where(g => !string.IsNullOrEmpty(g)).ToList();
+            if (defaultCountry == "ko" && !genresList.Any(g => g.Equals("Manhwa", StringComparison.OrdinalIgnoreCase)))
+            {
+                genresList.Add("Manhwa");
+            }
+            else if (defaultCountry == "zh" && !genresList.Any(g => g.Equals("Manhua", StringComparison.OrdinalIgnoreCase)))
+            {
+                genresList.Add("Manhua");
+            }
+            var genres = genresList.ToArray();
+
+            var countryCode = genres.Contains("Manhwa", StringComparer.OrdinalIgnoreCase) ? "ko" :
+                              genres.Contains("Manhua", StringComparer.OrdinalIgnoreCase) ? "zh" :
+                              defaultCountry;
 
             var lastChapMatch = Regex.Match(block, @"class=""last_chapter"">\s*<a href=""([^""]+)""[^>]*>([^<]+)<\/a>");
             var mangaId = CreateGuid("truyengg:manga:" + slug);
@@ -351,7 +364,7 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
                 Description = "",
                 Genres = genres,
                 Status = block.Contains("Hoàn thành") ? "completed" : "ongoing",
-                Country = genres.Contains("Manhwa") ? "ko" : genres.Contains("Manhua") ? "zh" : "ja",
+                Country = countryCode,
                 ContentRating = "safe",
                 Follows = follows,
                 Rating = 8.5,
@@ -365,13 +378,46 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
         return items;
     }
 
-    public async Task<List<MangaCard>> GetLatest(int page = 1)
+    public async Task<List<MangaCard>> GetLatest(int page = 1, int country = 4)
     {
         var p = Math.Max(1, page);
-        var url = $"{BaseUrl}/truyen-moi-cap-nhat/trang-{p}.html?country=4";
+        var url = $"{BaseUrl}/truyen-moi-cap-nhat/trang-{p}.html?country={country}";
         var html = await FetchHtml(url);
         if (string.IsNullOrEmpty(html)) return [];
-        return ParseGridHtml(html);
+        var defaultCountry = country switch { 3 => "ko", 1 => "zh", 2 => "vi", _ => "ja" };
+        return ParseGridHtml(html, defaultCountry);
+    }
+
+    public async Task<List<MangaCard>> GetLatestManhwaManhua(int page = 1)
+    {
+        var cacheKey = $"truyengg:manhwa_manhua:{page}";
+        var cached = await CacheGetString(cacheKey);
+        if (cached != null)
+        {
+            try { return JsonSerializer.Deserialize<List<MangaCard>>(cached) ?? []; } catch { }
+        }
+
+        var manhwaTask = GetLatest(page, 3); // 3 = Hàn Quốc (Manhwa)
+        var manhuaTask = GetLatest(page, 1); // 1 = Trung Quốc (Manhua)
+        await Task.WhenAll(manhwaTask, manhuaTask);
+
+        var manhwa = await manhwaTask;
+        var manhua = await manhuaTask;
+
+        var merged = new List<MangaCard>();
+        int max = Math.Max(manhwa.Count, manhua.Count);
+        for (int i = 0; i < max; i++)
+        {
+            if (i < manhwa.Count) merged.Add(manhwa[i]);
+            if (i < manhua.Count) merged.Add(manhua[i]);
+        }
+
+        var result = merged.OrderByDescending(x => x.UpdatedAt).ToList();
+        if (result.Count > 0)
+        {
+            await CacheSetString(cacheKey, JsonSerializer.Serialize(result), TimeSpan.FromMinutes(5));
+        }
+        return result;
     }
 
     public async Task<List<MangaCard>> Search(string q, int page = 1)
@@ -532,17 +578,9 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
             allChapters.Add(new ChapterCard(chapId, id, chapTitle, num, "vi", publishedAt, "TruyenGG"));
         }
 
-        if (ascending)
-        {
-            allChapters = allChapters.OrderBy(c => c.Number).ThenBy(c => c.PublishedAt).ToList();
-        }
-        else
-        {
-            allChapters = allChapters.OrderByDescending(c => c.Number).ThenByDescending(c => c.PublishedAt).ToList();
-        }
-
-        var total = allChapters.Count;
-        var paged = allChapters.Skip((page - 1) * size).Take(size).ToList();
+        var deduplicated = Catalog.DeduplicateChapters(allChapters, ascending);
+        var total = deduplicated.Count;
+        var paged = deduplicated.Skip((page - 1) * size).Take(size).ToList();
         return new ChapterPage(paged, total, page, size);
     }
 
@@ -591,7 +629,7 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
 
                             chaps.Add(new ChapterCard(chapId, mangaId, chapTitle, num, "vi", publishedAt, "TruyenGG"));
                         }
-                        return chaps;
+                        return Catalog.DeduplicateChapters(chaps, ascending: false);
                     }
                 }
             }

@@ -35,6 +35,9 @@ export class App {
   statuses = statuses;
 
   constructor() {
+    if (typeof window !== 'undefined') {
+      this.reader.set(window.location.pathname.includes('/chuong/'));
+    }
     this.router.events.subscribe(e => {
       if (e instanceof NavigationEnd) {
         this.menu.set(false);

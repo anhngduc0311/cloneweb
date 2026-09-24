@@ -5,7 +5,37 @@ import { Manga, compact, ago } from './core';
 @Component({selector:'app-icon',template:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path [attr.d]="paths[name()] || paths['book']"/></svg>`,styles:[`:host{display:inline-flex;width:20px;height:20px;flex-shrink:0;vertical-align:middle}svg{width:100%;height:100%}`]})
 export class Icon {
   name=input('book');
-  paths:Record<string,string>={search:'m21 21-5-5 M19 10.5a8.5 8.5 0 1 1-17 0a8.5 8.5 0 0 1 17 0',home:'m3 10 9-7 9 7v11h-6v-7H9v7H3z',heart:'M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z',clock:'M12 8v5l3 2 M22 12a10 10 0 1 1-20 0a10 10 0 0 1 20 0',star:'m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9 1.1-6.2L3 9.6l6.2-.9Z',fire:'M12 2s2 6-2 9c0-3-3-4-3-4s-5 6-2 11c3 6 12 5 14-1s-2-10-3-11c1 5-2 6-2 6s2-6-2-10Z',trophy:'M8 3h8v8a4 4 0 0 1-8 0V3Z M8 5H3v4a4 4 0 0 0 5 4m8-8h5v4a4 4 0 0 1-5 4M12 15v6m-5 0h10',book:'M3 4h6l3 2 3-2h6v16h-6l-3 2-3-2H3V4Zm9 2v16',comment:'M21 3H3v14h5l4 4 4-4h5V3Z',user:'M16 6a4 4 0 1 1-8 0a4 4 0 0 1 8 0M4 22v-3a8 8 0 0 1 16 0v3',settings:'M12 8a4 4 0 1 1 0 8a4 4 0 0 1 0-8 M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2',chevron:'m9 5 7 7-7 7',filter:'M3 4h18l-7 8v8l-4-2v-6Z',menu:'M3 6h18M3 12h18M3 18h18',close:'m6 6 12 12M6 18 18 6',check:'m4 12 5 5L20 6',arrow:'M19 12H5m6-6-6 6 6 6',sun:'M12 2v2m0 16v2M2 12h2m16 0h2M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2M16 12a4 4 0 1 1-8 0a4 4 0 0 1 8 0',info:'M12 11v6m0-10v.1M22 12a10 10 0 1 1-20 0a10 10 0 0 1 20 0'};
+  paths:Record<string,string>={
+    search:'m21 21-5-5 M19 10.5a8.5 8.5 0 1 1-17 0a8.5 8.5 0 0 1 17 0',
+    home:'m3 10 9-7 9 7v11h-6v-7H9v7H3z',
+    heart:'M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z',
+    clock:'M12 8v5l3 2 M22 12a10 10 0 1 1-20 0a10 10 0 0 1 20 0',
+    star:'m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9 1.1-6.2L3 9.6l6.2-.9Z',
+    fire:'M12 2s2 6-2 9c0-3-3-4-3-4s-5 6-2 11c3 6 12 5 14-1s-2-10-3-11c1 5-2 6-2 6s2-6-2-10Z',
+    trophy:'M8 3h8v8a4 4 0 0 1-8 0V3Z M8 5H3v4a4 4 0 0 0 5 4m8-8h5v4a4 4 0 0 1-5 4M12 15v6m-5 0h10',
+    book:'M3 4h6l3 2 3-2h6v16h-6l-3 2-3-2H3V4Zm9 2v16',
+    comment:'M21 3H3v14h5l4 4 4-4h5V3Z',
+    user:'M16 6a4 4 0 1 1-8 0a4 4 0 0 1 8 0M4 22v-3a8 8 0 0 1 16 0v3',
+    settings:'M12 8a4 4 0 1 1 0 8a4 4 0 0 1 0-8 M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2',
+    chevron:'m9 5 7 7-7 7',
+    filter:'M3 4h18l-7 8v8l-4-2v-6Z',
+    menu:'M3 6h18M3 12h18M3 18h18',
+    close:'m6 6 12 12M6 18 18 6',
+    check:'m4 12 5 5L20 6',
+    arrow:'M19 12H5m6-6-6 6 6 6',
+    arrowLeft:'M19 12H5m6-6-6 6 6 6',
+    arrowRight:'M5 12h14m-6-6 6 6-6 6',
+    arrowUp:'M12 19V5m-6 6 6-6 6 6',
+    sun:'M12 2v2m0 16v2M2 12h2m16 0h2M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2M16 12a4 4 0 1 1-8 0a4 4 0 0 1 8 0',
+    info:'M12 11v6m0-10v.1M22 12a10 10 0 1 1-20 0a10 10 0 0 1 20 0',
+    play:'M5 3l14 9-14 9V3z',
+    pause:'M6 4h4v16H6zm8 0h4v16h-4z',
+    zoomIn:'m21 21-5-5 M19 10.5a8.5 8.5 0 1 1-17 0a8.5 8.5 0 0 1 17 0 M10.5 7v7 M7 10.5h7',
+    zoomOut:'m21 21-5-5 M19 10.5a8.5 8.5 0 1 1-17 0a8.5 8.5 0 0 1 17 0 M7 10.5h7',
+    fullscreen:'M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3',
+    flag:'M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zm0 7v-7',
+    scroll:'M4 6h16M4 12h16M4 18h16'
+  };
 }
 @Component({selector:'app-card',imports:[RouterLink,Icon],template:`<article class="manga-card"><a class="cover-link" [routerLink]="['/truyen-tranh',manga().id]"><img [src]="manga().cover" [alt]="manga().title" loading="lazy" decoding="async" referrerpolicy="no-referrer" (load)="loaded.set(true)" [class.loaded]="loaded()" (error)="fallback($event)"><div class="cover-caption"><h3>{{manga().title}}</h3><div class="card-stats"><span><app-icon name="star"/> {{manga().rating.toFixed(1)}}</span><span><app-icon name="heart"/> {{compact(manga().follows)}}</span></div></div>@if(manga().contentRating==='erotica'||manga().contentRating==='pornographic'){<span class="age-label">18+</span>}</a><div class="mini-chapters">@for(c of manga().chapters.slice(0,3);track c.id){<div><a [routerLink]="['/chuong',c.id]">{{c.title}}</a><time>{{ago(c.publishedAt)}}</time></div>}@if(!manga().chapters.length){<div><span>{{manga().author || 'Đang cập nhật'}}</span></div>}</div></article>`})
 export class MangaCardComponent { manga=input.required<Manga>();loaded=signal(false);compact=compact;ago=ago;fallback(e:Event){const img=e.target as HTMLImageElement;img.onerror=null;img.src='/cover-placeholder.svg';this.loaded.set(true);} }

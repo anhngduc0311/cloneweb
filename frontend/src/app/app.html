@@ -1,117 +1,170 @@
-<header class="site-header">
-  <div class="header-inner">
-    <a class="brand" routerLink="/" aria-label="TruyenDex - Trang chủ">
-      <span class="brand-mark">T</span>Truyen<span>Dex</span>
-    </a>
-    <div class="header-search-wrap">
-      <form class="header-search" (ngSubmit)="search()">
-        <input
-          name="query"
-          [(ngModel)]="query"
-          (input)="onQueryInput()"
-          (focus)="onFocus()"
-          (keydown)="onKeydown($event)"
-          placeholder="Tìm truyện…"
-          aria-label="Tìm truyện"
-          autocomplete="off"
-        >
-        @if(loadingSuggestions()){
-          <div class="search-spinner" aria-hidden="true"></div>
-        }
-        <button aria-label="Tìm kiếm" type="submit"><app-icon name="search"/></button>
-      </form>
+@if(!reader()){
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" routerLink="/" aria-label="TruyenDex - Trang chủ">
+        <span class="brand-mark">T</span>Truyen<span>Dex</span>
+      </a>
+      <div class="header-search-wrap">
+        <form class="header-search" (ngSubmit)="search()">
+          <input
+            name="query"
+            [(ngModel)]="query"
+            (input)="onQueryInput()"
+            (focus)="onFocus()"
+            (keydown)="onKeydown($event)"
+            placeholder="Tìm truyện…"
+            aria-label="Tìm truyện"
+            autocomplete="off"
+          >
+          @if(loadingSuggestions()){
+            <div class="search-spinner" aria-hidden="true"></div>
+          }
+          <button aria-label="Tìm kiếm" type="submit"><app-icon name="search"/></button>
+        </form>
 
-      @if(suggestionsOpen() && query.trim()){
-        <div class="search-suggestions" (mousedown)="$event.stopPropagation()">
-          @if(loadingSuggestions() && !suggestions().length){
-            <div class="suggestion-loading">
-              <div class="search-spinner"></div>
-              <span>Đang tìm kiếm gợi ý…</span>
-            </div>
-          }@else if(suggestions().length){
-            <div class="suggestion-list">
-              @for(m of suggestions(); track m.id; let i = $index){
-                <a
-                  [routerLink]="['/truyen-tranh', m.id]"
-                  class="suggestion-item"
-                  [class.highlighted]="highlightedIndex() === i"
-                  (click)="selectManga(m)"
-                  (mouseenter)="highlightedIndex.set(i)"
-                >
-                  <img [src]="m.cover" [alt]="m.title" class="suggestion-cover" (error)="coverFallback($event)" loading="lazy">
-                  <div class="suggestion-info">
-                    <strong class="suggestion-title">{{m.title}}</strong>
-                    <div class="suggestion-meta">
-                      @if(m.chapters && m.chapters.length){
-                        <span class="suggestion-chapter">{{m.chapters[0].title || 'Mới cập nhật'}}</span>
-                      }
-                      @if(m.rating > 0){
-                        <span class="suggestion-rating"><app-icon name="star"/> {{m.rating.toFixed(1)}}</span>
-                      }
-                      @if(m.genres && m.genres.length){
-                        <span class="suggestion-genre">{{m.genres.slice(0, 2).join(', ')}}</span>
+        @if(suggestionsOpen() && query.trim()){
+          <div class="search-suggestions" (mousedown)="$event.stopPropagation()">
+            @if(loadingSuggestions() && !suggestions().length){
+              <div class="suggestion-loading">
+                <div class="search-spinner"></div>
+                <span>Đang tìm kiếm gợi ý…</span>
+              </div>
+            }@else if(suggestions().length){
+              <div class="suggestion-list">
+                @for(m of suggestions(); track m.id; let i = $index){
+                  <a
+                    [routerLink]="['/truyen-tranh', m.id]"
+                    class="suggestion-item"
+                    [class.highlighted]="highlightedIndex() === i"
+                    (click)="selectManga(m)"
+                    (mouseenter)="highlightedIndex.set(i)"
+                  >
+                    <img [src]="m.cover" [alt]="m.title" class="suggestion-cover" (error)="coverFallback($event)" loading="lazy">
+                    <div class="suggestion-info">
+                      <strong class="suggestion-title">{{m.title}}</strong>
+                      <div class="suggestion-meta">
+                        @if(m.chapters && m.chapters.length){
+                          <span class="suggestion-chapter">{{m.chapters[0].title || 'Mới cập nhật'}}</span>
+                        }
+                        @if(m.rating > 0){
+                          <span class="suggestion-rating"><app-icon name="star"/> {{m.rating.toFixed(1)}}</span>
+                        }
+                        @if(m.genres && m.genres.length){
+                          <span class="suggestion-genre">{{m.genres.slice(0, 2).join(', ')}}</span>
+                        }
+                      </div>
+                      @if(m.author){
+                        <span class="suggestion-author">{{m.author}}</span>
                       }
                     </div>
-                    @if(m.author){
-                      <span class="suggestion-author">{{m.author}}</span>
+                    @if(m.status){
+                      <span class="suggestion-status" [class.ongoing]="m.status === 'ongoing'" [class.completed]="m.status === 'completed'">
+                        {{statuses[m.status] || m.status}}
+                      </span>
                     }
-                  </div>
-                  @if(m.status){
-                    <span class="suggestion-status" [class.ongoing]="m.status === 'ongoing'" [class.completed]="m.status === 'completed'">
-                      {{statuses[m.status] || m.status}}
-                    </span>
-                  }
-                </a>
-              }
-            </div>
-            <button
-              type="button"
-              class="suggestion-footer"
-              [class.highlighted]="highlightedIndex() === suggestions().length"
-              (click)="search()"
-              (mouseenter)="highlightedIndex.set(suggestions().length)"
-            >
-              <span>Xem tất cả kết quả cho "<strong>{{query.trim()}}</strong>"</span>
-              <app-icon name="chevron"/>
-            </button>
-          }@else if(!loadingSuggestions() && !suggestions().length){
-            <div class="suggestion-empty">
-              <app-icon name="search"/>
-              <p>Không tìm thấy truyện cho "<strong>{{query.trim()}}</strong>"</p>
-              <button type="button" class="btn-full-search" (click)="search()">Tìm kiếm nâng cao</button>
-            </div>
-          }
-        </div>
-      }
-    </div>
-    <div class="header-actions">
-      <button class="icon-button" aria-label="Tùy chỉnh" (click)="openSettings()"><app-icon name="settings"/></button>
-      <div class="account-wrap">
-        <button class="account-button" (click)="account.set(!account())">
-          <app-icon name="user"/>
-          <span>{{store.user()?.name || 'Tài khoản'}}</span>
-          <span class="caret">⌄</span>
-        </button>
-        @if(account()){
-          <div class="account-menu">
-            @if(store.user()){
-              <strong>{{store.user()?.name}}</strong>
-              <a routerLink="/theo-doi">Truyện theo dõi</a>
-              <a routerLink="/lich-su">Lịch sử đọc</a>
-              <button (click)="store.logout();account.set(false)">Đăng xuất</button>
-            }@else{
-              <a routerLink="/dang-nhap">Đăng nhập</a>
-              <a routerLink="/dang-ky">Đăng ký tài khoản</a>
+                  </a>
+                }
+              </div>
+              <button
+                type="button"
+                class="suggestion-footer"
+                [class.highlighted]="highlightedIndex() === suggestions().length"
+                (click)="search()"
+                (mouseenter)="highlightedIndex.set(suggestions().length)"
+              >
+                <span>Xem tất cả kết quả cho "<strong>{{query.trim()}}</strong>"</span>
+                <app-icon name="chevron"/>
+              </button>
+            }@else if(!loadingSuggestions() && !suggestions().length){
+              <div class="suggestion-empty">
+                <app-icon name="search"/>
+                <p>Không tìm thấy truyện cho "<strong>{{query.trim()}}</strong>"</p>
+                <button type="button" class="btn-full-search" (click)="search()">Tìm kiếm nâng cao</button>
+              </div>
             }
-            <button (click)="openSettings();account.set(false)">Tùy chỉnh đọc truyện</button>
           </div>
         }
       </div>
-      <button class="mobile-menu icon-button" aria-label="Mở menu" (click)="menu.set(!menu())"><app-icon name="menu"/></button>
+      <div class="header-actions">
+        <button class="icon-button" aria-label="Tùy chỉnh" (click)="openSettings()"><app-icon name="settings"/></button>
+        <div class="account-wrap">
+          <button class="account-button" (click)="account.set(!account())">
+            <app-icon name="user"/>
+            <span>{{store.user()?.name || 'Tài khoản'}}</span>
+            <span class="caret">⌄</span>
+          </button>
+          @if(account()){
+            <div class="account-menu">
+              @if(store.user()){
+                <strong>{{store.user()?.name}}</strong>
+                <a routerLink="/theo-doi">Truyện theo dõi</a>
+                <a routerLink="/lich-su">Lịch sử đọc</a>
+                <button (click)="store.logout();account.set(false)">Đăng xuất</button>
+              }@else{
+                <a routerLink="/dang-nhap">Đăng nhập</a>
+                <a routerLink="/dang-ky">Đăng ký tài khoản</a>
+              }
+              <button (click)="openSettings();account.set(false)">Tùy chỉnh đọc truyện</button>
+            </div>
+          }
+        </div>
+        <button class="mobile-menu icon-button" aria-label="Mở menu" (click)="menu.set(!menu())"><app-icon name="menu"/></button>
+      </div>
     </div>
-  </div>
-</header>
-<div class="site-container" [class.reader-container]="reader()"><div class="site-notice"><app-icon name="info"/><span>TruyenDex · Đọc truyện tiếng Việt. Dữ liệu và hình ảnh được cung cấp bởi TruyenDex / MangaDex.</span><span class="live-dot"></span></div><nav class="main-nav" [class.open]="menu()" aria-label="Điều hướng chính"><a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact:true}"><app-icon name="home"/> Trang chủ</a><a routerLink="/theo-doi" routerLinkActive="active">Theo dõi</a><a routerLink="/tim-truyen-nang-cao" [queryParams]="{sort:'hot'}">Hot</a><a routerLink="/tim-truyen-nang-cao" [queryParams]="{sort:'rating'}">Yêu thích</a><a routerLink="/" [queryParams]="{page:1}">Mới cập nhật</a><a routerLink="/lich-su" routerLinkActive="active">Lịch sử</a><button [class.active]="genresOpen()" (click)="genres()">Thể loại ⌄</button><a routerLink="/tim-truyen-nang-cao">Tìm truyện</a><a routerLink="/tim-truyen-nang-cao" [queryParams]="{demographic:'shoujo'}">Con gái</a><a routerLink="/tim-truyen-nang-cao" [queryParams]="{demographic:'shounen'}">Con trai</a><a href="https://docln.sbs" target="_blank" rel="noopener noreferrer">Light Novel ↗</a></nav>@if(genresOpen()){<div class="genre-dropdown">@for(t of tags();track t.id){<a routerLink="/tim-truyen-nang-cao" [queryParams]="{genre:t.id}">{{t.name}}</a>}@if(!tags().length){<p>Đang tải thể loại…</p>}</div>}<main><router-outlet/></main></div>
-<footer class="site-footer"><div class="footer-inner"><div><a class="brand" routerLink="/"><span class="brand-mark">T</span>Truyen<span>Dex</span></a><p>Những câu chuyện hay, luôn ở đây.</p><small>TruyenDex Clone · Angular / .NET / PostgreSQL</small></div><div><h3>Về nội dung</h3><p>Giao diện tái tạo phục vụ dự án cá nhân. Thông tin truyện và ảnh được tải từ nguồn TruyenDex / MangaDex; bản clone không sở hữu nội dung.</p><a href="https://truyendex.xyz/nettrom" target="_blank" rel="noopener noreferrer">Website tham chiếu ↗</a><a href="https://mangadex.org" target="_blank" rel="noopener noreferrer">MangaDex ↗</a></div></div></footer>
+  </header>
+}
+
+<div class="site-container" [class.reader-container]="reader()">
+  @if(!reader()){
+    <div class="site-notice">
+      <app-icon name="info"/>
+      <span>TruyenDex · Đọc truyện tiếng Việt. Dữ liệu và hình ảnh được cung cấp bởi TruyenDex / MangaDex.</span>
+      <span class="live-dot"></span>
+    </div>
+    <nav class="main-nav" [class.open]="menu()" aria-label="Điều hướng chính">
+      <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact:true}"><app-icon name="home"/> Trang chủ</a>
+      <a routerLink="/theo-doi" routerLinkActive="active">Theo dõi</a>
+      <a routerLink="/tim-truyen-nang-cao" [queryParams]="{sort:'hot'}">Hot</a>
+      <a routerLink="/tim-truyen-nang-cao" [queryParams]="{sort:'rating'}">Yêu thích</a>
+      <a routerLink="/" [queryParams]="{page:1}">Mới cập nhật</a>
+      <a routerLink="/lich-su" routerLinkActive="active">Lịch sử</a>
+      <button [class.active]="genresOpen()" (click)="genres()">Thể loại ⌄</button>
+      <a routerLink="/tim-truyen-nang-cao">Tìm truyện</a>
+      <a routerLink="/tim-truyen-nang-cao" [queryParams]="{demographic:'shoujo'}">Con gái</a>
+      <a routerLink="/tim-truyen-nang-cao" [queryParams]="{demographic:'shounen'}">Con trai</a>
+      <a href="https://docln.sbs" target="_blank" rel="noopener noreferrer">Light Novel ↗</a>
+    </nav>
+    @if(genresOpen()){
+      <div class="genre-dropdown">
+        @for(t of tags();track t.id){
+          <a routerLink="/tim-truyen-nang-cao" [queryParams]="{genre:t.id}">{{t.name}}</a>
+        }
+        @if(!tags().length){
+          <p>Đang tải thể loại…</p>
+        }
+      </div>
+    }
+  }
+  <main><router-outlet/></main>
+</div>
+
+@if(!reader()){
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div>
+        <a class="brand" routerLink="/"><span class="brand-mark">T</span>Truyen<span>Dex</span></a>
+        <p>Những câu chuyện hay, luôn ở đây.</p>
+        <small>TruyenDex Clone · Angular / .NET / PostgreSQL</small>
+      </div>
+      <div>
+        <h3>Về nội dung</h3>
+        <p>Giao diện tái tạo phục vụ dự án cá nhân. Thông tin truyện và ảnh được tải từ nguồn TruyenDex / MangaDex; bản clone không sở hữu nội dung.</p>
+        <a href="https://truyendex.xyz/nettrom" target="_blank" rel="noopener noreferrer">Website tham chiếu ↗</a>
+        <a href="https://mangadex.org" target="_blank" rel="noopener noreferrer">MangaDex ↗</a>
+      </div>
+    </div>
+  </footer>
+}
+
 @if(store.toast()){<div class="toast" role="status"><app-icon name="info"/>{{store.toast()}}<button aria-label="Đóng thông báo" (click)="store.toast.set('')">×</button></div>}
 @if(settingsOpen()){<div class="modal-backdrop" (click)="settingsOpen.set(false)"><section class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" (click)="$event.stopPropagation()"><div class="section-title"><h2 id="settings-title"><app-icon name="settings"/> Tùy chỉnh</h2><button class="icon-button" aria-label="Đóng tùy chỉnh" (click)="settingsOpen.set(false)"><app-icon name="close"/></button></div><p class="muted">Những tùy chỉnh này được lưu trên thiết bị hiện tại.</p><label>Ngôn ngữ bản dịch<select [(ngModel)]="draft.language"><option value="vi">Tiếng Việt</option><option value="en">Tiếng Anh</option></select></label><label>Chất lượng ảnh<select [(ngModel)]="draft.dataSaver"><option [ngValue]="false">Nét căng · Ảnh gốc</option><option [ngValue]="true">Tiết kiệm dung lượng</option></select></label><label>Chiều rộng ảnh tối đa<select [(ngModel)]="draft.width"><option [ngValue]="700">700 px</option><option [ngValue]="900">900 px</option><option [ngValue]="1200">1200 px</option></select></label><label>Giao diện<select [(ngModel)]="draft.theme"><option value="dark">Tối</option><option value="light">Sáng</option></select></label><div class="modal-actions"><button class="secondary" (click)="draft={language:'vi',dataSaver:false,width:900,theme:'dark'}">Đặt lại</button><button class="primary" (click)="saveSettings()"><app-icon name="check"/> Lưu tùy chỉnh</button></div></section></div>}
