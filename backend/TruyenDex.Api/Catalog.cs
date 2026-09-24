@@ -631,26 +631,31 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             S(a["translatedLanguage"]), Date(a["publishAt"]), S(rel.FirstOrDefault(x => S(x?["type"]) == "scanlation_group")?["attributes"]?["name"]));
     }
 
-    public async Task<ChapterPage> Chapters(Guid id, string language, int page, bool ascending = false)
+    public async Task<List<ChapterCard>> GetAllChapters(Guid id, string language)
     {
-        var cacheKey = $"catalog:chapters:v9:{id}:{language}:{page}:{ascending}";
-        var cachedChapters = await CacheGet<ChapterPage>(cacheKey);
-        if (cachedChapters != null) return cachedChapters;
+        var cacheKey = $"catalog:all_chapters:v3:{id}:{language}";
+        var cached = await CacheGet<List<ChapterCard>>(cacheKey);
+        if (cached != null && cached.Count > 0) return cached;
 
-        var ggChaps = await truyengg.GetChapters(id, page, 100, ascending);
-        if (ggChaps != null)
+        var ggChaps = await truyengg.GetChapters(id, 1, 1000, ascending: true);
+        if (ggChaps != null && ggChaps.Items.Count > 0)
         {
-            var cleanGg = DeduplicateChapters(ggChaps.Items, ascending);
-            var cleanPage = new ChapterPage(cleanGg, ggChaps.Total, page, 100);
-            await CacheSet(cacheKey, cleanPage, TimeSpan.FromMinutes(5));
-            return cleanPage;
+            var cleanGg = DeduplicateChapters(ggChaps.Items, ascending: true);
+            await CacheSet(cacheKey, cleanGg, TimeSpan.FromMinutes(10));
+            return cleanGg;
         }
 
-        const int size = 100;
-        var r = await Get($"/manga/{id}/feed?limit=500&offset=0&translatedLanguage[]={E(language == "en" ? "en" : "vi")}&includes[]=scanlation_group&order[chapter]={(ascending ? "asc" : "desc")}&includeExternalUrl=0");
-        var mdChapters = r["data"]!.AsArray().Select(x => MapChapter(x!)).ToList();
+        var mdChapters = new List<ChapterCard>();
+        try
+        {
+            var r = await Get($"/manga/{id}/feed?limit=500&offset=0&translatedLanguage[]={E(language == "en" ? "en" : "vi")}&includes[]=scanlation_group&order[chapter]=asc&includeExternalUrl=0");
+            if (r["data"]?.AsArray() is JsonArray arr)
+            {
+                mdChapters.AddRange(arr.Select(x => MapChapter(x!)));
+            }
+        }
+        catch { }
 
-        // If language is Vietnamese, merge supplemental chapters from TruyenGG (e.g. newer chapters and chapter 1)
         if (language == "vi" || string.IsNullOrEmpty(language))
         {
             try
@@ -668,44 +673,76 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             catch { }
         }
 
-        var deduplicated = DeduplicateChapters(mdChapters, ascending);
-        var total = deduplicated.Count;
-        var pagedItems = deduplicated.Skip((page - 1) * size).Take(size).ToList();
-        var result = new ChapterPage(pagedItems, total, page, size);
-        await CacheSet(cacheKey, result, TimeSpan.FromMinutes(5));
-        return result;
+        var deduplicated = DeduplicateChapters(mdChapters, ascending: true);
+        if (deduplicated.Count > 0)
+        {
+            await CacheSet(cacheKey, deduplicated, TimeSpan.FromMinutes(10));
+        }
+        return deduplicated;
+    }
+
+    public async Task<ChapterPage> Chapters(Guid id, string language, int page, bool ascending = false)
+    {
+        var allChapters = await GetAllChapters(id, language);
+        var ordered = ascending
+            ? allChapters.OrderBy(c => c.Number).ThenBy(c => c.PublishedAt).ToList()
+            : allChapters.OrderByDescending(c => c.Number).ThenByDescending(c => c.PublishedAt).ToList();
+
+        const int size = 100;
+        var total = ordered.Count;
+        var pagedItems = ordered.Skip((page - 1) * size).Take(size).ToList();
+        return new ChapterPage(pagedItems, total, page, size);
     }
 
     public async Task<ReaderData> Read(Guid id)
     {
-        var cacheKey = $"catalog:reader:v4:{id}";
+        var cacheKey = $"catalog:reader:v7:{id}";
         var cachedReader = await CacheGet<ReaderData>(cacheKey);
         if (cachedReader != null) return cachedReader;
 
         var ggReader = await truyengg.GetReader(id);
         if (ggReader != null)
         {
-            await CacheSet(cacheKey, ggReader, TimeSpan.FromMinutes(15));
-            return ggReader;
+            var mangaId = ggReader.Chapter.MangaId;
+            var manga = mangaId != Guid.Empty ? await Detail(mangaId) : null;
+            var nav = mangaId != Guid.Empty ? await GetAllChapters(mangaId, "vi") : null;
+            if (nav == null || nav.Count == 0)
+            {
+                nav = ggReader.Navigation;
+            }
+            if (!nav.Any(x => x.Id == id))
+            {
+                nav.Add(ggReader.Chapter);
+                nav = DeduplicateChapters(nav, ascending: true);
+            }
+
+            var finalReader = new ReaderData(
+                ggReader.Chapter,
+                manga ?? ggReader.Manga,
+                ggReader.Pages,
+                ggReader.DataSaverPages,
+                ggReader.ExternalUrl,
+                nav
+            );
+            await CacheSet(cacheKey, finalReader, TimeSpan.FromMinutes(15));
+            return finalReader;
         }
 
         var chapter = (await Get($"/chapter/{id}?includes[]=scanlation_group"))["data"]!;
         var c = MapChapter(chapter);
         var m = await Detail(c.MangaId);
-        var navigation = new List<ChapterCard>();
-        var aggregate = await Get($"/manga/{c.MangaId}/aggregate?translatedLanguage[]={E(c.Language)}");
-        if (aggregate["volumes"] is JsonObject volumes) foreach (var volume in volumes) {
-            if (volume.Value?["chapters"] is not JsonObject chapters) continue;
-            foreach (var ch in chapters) {
-                var number = S(ch.Value?["chapter"]);
-                decimal.TryParse(number, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var numeric);
-                var chapterId = S(ch.Value?["id"]);
-                if (ch.Value?["others"]?.AsArray().Any(x => S(x) == id.ToString()) == true) chapterId = id.ToString();
-                if (Guid.TryParse(chapterId, out var cid)) navigation.Add(new(cid, c.MangaId, "Chương " + number, numeric, c.Language, c.PublishedAt));
-            }
+
+        var navigation = await GetAllChapters(c.MangaId, c.Language);
+        if (navigation == null || navigation.Count == 0)
+        {
+            navigation = [c];
         }
-        if (!navigation.Any(x => x.Id == id)) navigation.Add(c);
-        navigation = navigation.OrderBy(x => x.Number).DistinctBy(x => x.Number > 0 ? (object)x.Number : (object)x.Id).ToList();
+        else if (!navigation.Any(x => x.Id == id))
+        {
+            navigation.Add(c);
+            navigation = DeduplicateChapters(navigation, ascending: true);
+        }
+
         var external = S(chapter["attributes"]?["externalUrl"]);
         if (external.Length > 0) return new(c, m, [], [], external.StartsWith("https://") ? external : null, navigation);
         var r = await Get($"/at-home/server/{id}");

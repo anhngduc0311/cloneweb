@@ -176,6 +176,18 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
         return null;
     }
 
+    public async Task<Guid> ResolveChapterMangaId(Guid chapterId)
+    {
+        if (ChapterMangaMap.TryGetValue(chapterId, out var mangaId) && mangaId != Guid.Empty) return mangaId;
+        var mangaIdStr = await CacheGetString($"truyengg:chap_manga:{chapterId}");
+        if (!string.IsNullOrEmpty(mangaIdStr) && Guid.TryParse(mangaIdStr, out var mId))
+        {
+            ChapterMangaMap[chapterId] = mId;
+            return mId;
+        }
+        return Guid.Empty;
+    }
+
     private async Task<string?> ResolveChapterUrl(Guid chapterId)
     {
         if (ChapterUrlMap.TryGetValue(chapterId, out var url) && !string.IsNullOrEmpty(url)) return url;
@@ -186,8 +198,8 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
             return url;
         }
 
-        var mangaIdStr = await CacheGetString($"truyengg:chap_manga:{chapterId}");
-        if (!string.IsNullOrEmpty(mangaIdStr) && Guid.TryParse(mangaIdStr, out var mId))
+        var mId = await ResolveChapterMangaId(chapterId);
+        if (mId != Guid.Empty)
         {
             await GetChapters(mId, 1, 500);
             if (ChapterUrlMap.TryGetValue(chapterId, out url)) return url;
@@ -604,6 +616,7 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
                 var slug = await ResolveSlug(matched.Id);
                 if (!string.IsNullOrEmpty(slug))
                 {
+                    RegisterManga(mangaId, slug);
                     var url = $"{BaseUrl}/truyen-tranh/{slug}";
                     var html = await FetchHtml(url);
                     if (!string.IsNullOrEmpty(html))
@@ -643,7 +656,7 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
     {
         var chapHref = await ResolveChapterUrl(chapterId);
         if (string.IsNullOrEmpty(chapHref)) return null;
-        var mangaId = ChapterMangaMap.GetValueOrDefault(chapterId);
+        var mangaId = await ResolveChapterMangaId(chapterId);
         var url = chapHref.StartsWith("http") ? chapHref : BaseUrl + (chapHref.StartsWith("/") ? "" : "/") + chapHref;
 
         var html = await FetchHtml(url);
@@ -670,6 +683,13 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
         var mangaTitle = titleMatch.Success ? StripHtml(titleMatch.Groups[2].Value) : "Truyện Tranh";
         var chapterTitle = titleMatch.Success ? StripHtml(titleMatch.Groups[3].Value) : "Chương";
 
+        var numMatch = Regex.Match(chapterTitle, @"(?:\b|[^\w\d])(?:chương|chapter|chap|ch|c)?[\s\._-]*(\d+(?:\.\d+)?)", RegexOptions.IgnoreCase);
+        decimal num = 0;
+        if (numMatch.Success)
+        {
+            decimal.TryParse(numMatch.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out num);
+        }
+
         var mangaCard = new MangaCard
         {
             Id = mangaId,
@@ -679,7 +699,7 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
             Author = "TruyenGG"
         };
 
-        var currentChap = new ChapterCard(chapterId, mangaId, chapterTitle, 0, "vi", DateTime.UtcNow, "TruyenGG");
+        var currentChap = new ChapterCard(chapterId, mangaId, chapterTitle, num, "vi", DateTime.UtcNow, "TruyenGG");
 
         // Navigation chapters
         var navigation = new List<ChapterCard>();
@@ -695,8 +715,11 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
         {
             navigation.Add(currentChap);
         }
+        navigation = Catalog.DeduplicateChapters(navigation, ascending: true);
 
-        return new ReaderData(currentChap, mangaCard, pages.ToArray(), pages.ToArray(), null, navigation);
+        string ProxyUrl(string u) => "/api/catalog/image-proxy?url=" + Uri.EscapeDataString(u);
+        var proxyPages = pages.Select(ProxyUrl).ToArray();
+        return new ReaderData(currentChap, mangaCard, proxyPages, proxyPages, null, navigation);
     }
 
     public static bool IsTruyenGgManga(Guid id) => MangaSlugMap.ContainsKey(id);

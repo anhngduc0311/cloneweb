@@ -210,9 +210,13 @@ app.MapGet("/api/catalog/image-proxy", async (string url, HttpContext ctx, IHttp
     client.Timeout = TimeSpan.FromSeconds(25);
     var req = new HttpRequestMessage(HttpMethod.Get, url);
     req.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
-    if (uri.Host.Contains("truyengg") || uri.Host.Contains("hinhhinh") || uri.Host.Contains("truyenvua") || uri.Host.Contains("tintruyen"))
+    if (uri.Host.Contains("truyengg") || uri.Host.Contains("hinhhinh") || uri.Host.Contains("hinhtruyen") || uri.Host.Contains("truyenvua") || uri.Host.Contains("tintruyen") || uri.Host.Contains("blogspot") || uri.Host.Contains("bp.blogspot") || uri.Host.Contains("nettruyen") || uri.Host.Contains("nettrom"))
     {
         req.Headers.Referrer = new Uri("https://truyenggvn.com/");
+    }
+    else
+    {
+        req.Headers.Referrer = new Uri($"{uri.Scheme}://{uri.Host}/");
     }
     var res = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
     if (!res.IsSuccessStatusCode) return Results.StatusCode((int)res.StatusCode);
