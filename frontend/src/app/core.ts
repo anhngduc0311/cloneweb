@@ -14,13 +14,34 @@ export function compact(n:number):string { return n>=1000000?(n/1000000).toFixed
 export function ago(date:string):string { const m=Math.max(0,Math.floor((Date.now()-new Date(date).getTime())/60000)); return m<1?'Vừa xong':m<60?`${m} phút`:m<1440?`${Math.floor(m/60)} giờ`:`${Math.floor(m/1440)} ngày`; }
 export const statuses:Record<string,string>={ongoing:'Đang tiến hành',completed:'Đã hoàn thành',hiatus:'Tạm ngưng',cancelled:'Đã hủy'};
 
+export function proxyImage(url: string): string {
+  if (!url || url.startsWith('https://services.f-ck.me/') || url.startsWith('/api/')) return url;
+  if (url.includes('.mangadex.network/') || url.includes('mangadex.org/')) {
+    return 'https://services.f-ck.me/v1/image/' + btoa(url).replace(/\+/g, '-').replace(/\//g, '_');
+  }
+  return url;
+}
+
 @Injectable({providedIn:'root'})
 export class Api {
-  async request<T>(path:string, method='GET', body?:unknown):Promise<T> {
+  private cache = new Map<string, { data: unknown; expiry: number }>();
+
+  async request<T>(path:string, method='GET', body?:unknown, useCache = false):Promise<T> {
+    const isGet = method === 'GET';
+    if (isGet && (useCache || path.startsWith('/chapters/'))) {
+      const hit = this.cache.get(path);
+      if (hit && hit.expiry > Date.now()) {
+        return hit.data as T;
+      }
+    }
     const token=sessionStorage.getItem('td-token');
     const response=await fetch('/api'+path,{method,headers:{...(body!==undefined?{'Content-Type':'application/json'}:{}),...(token?{Authorization:`Bearer ${token}`}:{})},body:body!==undefined?JSON.stringify(body):undefined});
     if(!response.ok){ let info; try{info=await response.json();}catch{} throw new Error(info?.message || (response.status===401?'Vui lòng đăng nhập để tiếp tục.':response.status===429?'Bạn thao tác quá nhanh. Vui lòng thử lại sau một phút.':'Không tải được dữ liệu. Vui lòng thử lại.')); }
-    return response.status===204?undefined as T:response.json();
+    const result = response.status===204?undefined as T:await response.json();
+    if (isGet && (useCache || path.startsWith('/chapters/'))) {
+      this.cache.set(path, { data: result, expiry: Date.now() + 5 * 60 * 1000 });
+    }
+    return result;
   }
   query(params:Record<string,unknown>){const q=new URLSearchParams();Object.entries(params).forEach(([k,v])=>{if(v!==''&&v!==undefined&&v!==null)q.set(k,String(v));});return q.toString();}
 }
