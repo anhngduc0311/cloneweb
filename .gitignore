@@ -1,0 +1,9 @@
+**/node_modules/
+**/dist/
+**/bin/
+**/obj/
+**/.angular/
+.env
+*.log
+.local/
+backend/TruyenDex.Api/appsettings.Local.json

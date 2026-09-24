@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+const base = process.env.API_URL || 'http://localhost:5080/api';
+const request = async (path, method='GET', body, token, expected=200) => {
+ const r=await fetch(base+path,{method,headers:{...(body!==undefined?{'Content-Type':'application/json'}:{}),...(token?{Authorization:`Bearer ${token}`}:{})},body:body!==undefined?JSON.stringify(body):undefined});
+ const text=await r.text();assert.equal(r.status,expected,`${method} ${path}: ${r.status} ${text.slice(0,500)}`);return text?JSON.parse(text):null;
+};
+const test=async(name,run)=>{await run();console.log('PASS '+name);};
+let home,session,second,manga,reader,commentId;
+const suffix=randomUUID();const password='SmokeTest!'+randomUUID();
+await test('PostgreSQL health',async()=>assert.equal((await request('/health')).database,'PostgreSQL'));
+await test('Anonymous access denied',async()=>{await request('/library','GET',undefined,undefined,401);});
+await test('Invalid registration rejected',async()=>{await request('/auth/register','POST',{email:'invalid',password:'short',name:'a'},undefined,400);});
+await test('Live homepage is newest first',async()=>{home=await request('/catalog/home?page=1');assert.equal(home.items.length,28);assert.ok(home.total>28);for(let i=1;i<home.items.length;i++)assert.ok(new Date(home.items[i-1].updatedAt)>=new Date(home.items[i].updatedAt));manga=home.items[0];assert.ok(manga.cover.startsWith('https://'));});
+await test('Older page is separate and ordered',async()=>{const older=await request('/catalog/home?page=2');const ids=new Set(home.items.map(x=>x.id));assert.ok(older.items.every(x=>!ids.has(x.id)));assert.ok(new Date(home.items.at(-1).updatedAt)>=new Date(older.items[0].updatedAt));});
+await test('Search and filters',async()=>{const r=await request('/catalog/search?q=Pokemon&language=vi&sort=rating&pageSize=3');assert.ok(r.items.length>0);const tags=await request('/catalog/tags');assert.ok(tags.length>10);});
+await test('Source details and real chapter pages',async()=>{const detail=await request('/catalog/'+manga.id);assert.equal(detail.id,manga.id);const chapters=await request('/catalog/'+manga.id+'/chapters?language=vi&page=1');assert.ok(chapters.items.length);reader=await request('/chapters/'+chapters.items[0].id);assert.ok(reader.pages.length>0);assert.ok(reader.navigation.some(c=>c.id===reader.chapter.id));assert.ok(reader.pages.every(p=>p.startsWith('https://')));});
+await test('Registration, login, JWT identity',async()=>{session=await request('/auth/register','POST',{email:`smoke-${suffix}@example.test`,password,name:'Kiểm thử'});const login=await request('/auth/login','POST',{email:session.user.email,password});assert.equal(login.user.id,session.user.id);assert.equal((await request('/auth/me','GET',undefined,session.token)).id,session.user.id);});
+await test('Follow is idempotent and persisted',async()=>{for(let i=0;i<2;i++)await request('/library/follows/'+manga.id,'PUT',{followed:true},session.token);const l=await request('/library','GET',undefined,session.token);assert.equal(l.follows.filter(x=>x.mangaId===manga.id).length,1);});
+await test('Reading history is stored',async()=>{await request('/library/history/'+reader.chapter.id,'PUT',{},session.token,204);const l=await request('/library','GET',undefined,session.token);assert.equal(l.history[0].chapterId,reader.chapter.id);});
+await test('Rating validation and update',async()=>{await request('/catalog/'+manga.id+'/rating','PUT',{score:99},session.token,400);await request('/catalog/'+manga.id+'/rating','PUT',{score:8},session.token,204);const c=await request('/catalog/'+manga.id+'/community','GET',undefined,session.token);assert.equal(c.myRating,8);});
+await test('Comment persists as text',async()=>{await request('/catalog/'+manga.id+'/comments','POST',{body:`Smoke test ${suffix} <script>not executable</script>`},session.token,201);const c=await request('/comments?mangaId='+manga.id);const own=c.items.find(x=>x.userId===session.user.id);assert.ok(own.body.includes(suffix));commentId=own.id;});
+await test('User isolation and comment authorization',async()=>{second=await request('/auth/register','POST',{email:`other-${suffix}@example.test`,password,name:'Người dùng khác'});const l=await request('/library','GET',undefined,second.token);assert.equal(l.follows.length,0);assert.equal(l.history.length,0);await request('/comments/'+commentId,'DELETE',undefined,second.token,403);});
+await test('Remove own test comment, follow and history',async()=>{await request('/comments/'+commentId,'DELETE',undefined,session.token,204);await request('/library/follows/'+manga.id,'PUT',{followed:false},session.token);await request('/library/history/'+manga.id,'DELETE',undefined,session.token,204);});
+console.log('All 14 integration checks passed. Live images: '+reader.pages.length+'. Test account IDs: '+session.user.id+', '+second.user.id);
