@@ -26,9 +26,15 @@ export function proxyImage(url: string): string {
 export class Api {
   private cache = new Map<string, { data: unknown; expiry: number }>();
 
+  clearCache(prefix?: string) {
+    if (!prefix) this.cache.clear();
+    else { for (const k of this.cache.keys()) if (k.includes(prefix)) this.cache.delete(k); }
+  }
+
   async request<T>(path:string, method='GET', body?:unknown, useCache = false):Promise<T> {
     const isGet = method === 'GET';
-    if (isGet && (useCache || path.startsWith('/chapters/'))) {
+    const shouldCache = isGet && (useCache || path.startsWith('/chapters/') || path.startsWith('/catalog/'));
+    if (shouldCache) {
       const hit = this.cache.get(path);
       if (hit && hit.expiry > Date.now()) {
         return hit.data as T;
@@ -38,7 +44,7 @@ export class Api {
     const response=await fetch('/api'+path,{method,headers:{...(body!==undefined?{'Content-Type':'application/json'}:{}),...(token?{Authorization:`Bearer ${token}`}:{})},body:body!==undefined?JSON.stringify(body):undefined});
     if(!response.ok){ let info; try{info=await response.json();}catch{} throw new Error(info?.message || (response.status===401?'Vui lòng đăng nhập để tiếp tục.':response.status===429?'Bạn thao tác quá nhanh. Vui lòng thử lại sau một phút.':'Không tải được dữ liệu. Vui lòng thử lại.')); }
     const result = response.status===204?undefined as T:await response.json();
-    if (isGet && (useCache || path.startsWith('/chapters/'))) {
+    if (shouldCache) {
       this.cache.set(path, { data: result, expiry: Date.now() + 5 * 60 * 1000 });
     }
     return result;
@@ -50,7 +56,7 @@ export class Store {
   user=signal<User|null>(null);
   follows=signal<LibraryItem[]>([]);
   history=signal<LibraryItem[]>(readStored('td-history',[]));
-  settings=signal<Settings>(readStored('td-settings',{language:'vi',dataSaver:false,width:900,theme:'dark'}));
+  settings=signal<Settings>(readStored('td-settings',{language:'vi',dataSaver:true,width:900,theme:'dark'}));
   toast=signal('');
   private timer?:ReturnType<typeof setTimeout>;
   constructor(private api:Api){this.applyTheme();if(sessionStorage.getItem('td-token'))void this.restore();}

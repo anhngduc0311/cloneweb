@@ -57,23 +57,29 @@ public class Catalog(HttpClient http, IMemoryCache cache)
                     if (!response.IsSuccessStatusCode) continue;
                     var json = await response.Content.ReadAsStringAsync();
                     var node = JsonNode.Parse(json) ?? throw new JsonException();
-                    cache.Set(key, json, new MemoryCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(2), Size = 1 });
+                    var expiry = path.Contains("/homepage") ? TimeSpan.FromMinutes(15)
+                        : path.Contains("/manga/tag") ? TimeSpan.FromHours(2)
+                        : path.Contains("/aggregate") ? TimeSpan.FromMinutes(30)
+                        : path.Contains("/statistics/") ? TimeSpan.FromMinutes(15)
+                        : TimeSpan.FromMinutes(10);
+                    cache.Set(key, json, new MemoryCacheEntryOptions { AbsoluteExpirationRelativeToNow = expiry, Size = 1 });
                     return node;
                 }
                 catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { }
             }
             throw new UpstreamException("Nguồn truyện đang tạm thời không phản hồi. Vui lòng thử lại sau.");
         }
-        finally { await Task.Delay(350); Gate.Release(); }
+        finally { await Task.Delay(200); Gate.Release(); }
     }
-    private MangaCard Map(JsonNode n)
+    private MangaCard Map(JsonNode n, bool isThumbnail = true)
     {
         var a = n["attributes"]!;
         var rel = n["relationships"]!.AsArray();
         var id = Guid.Parse(S(n["id"]));
         var title = a["altTitles"]?.AsArray().Select(x => x?["vi"]).FirstOrDefault(x => x != null);
         var file = S(rel.FirstOrDefault(x => S(x?["type"]) == "cover_art")?["attributes"]?["fileName"]);
-        var coverUrl = $"https://mangadex.org/covers/{id}/{file}.512.jpg";
+        var sizeExt = isThumbnail ? ".256.jpg" : ".512.jpg";
+        var coverUrl = $"https://mangadex.org/covers/{id}/{file}{sizeExt}";
         return new MangaCard {
             Id = id, Title = title == null ? Localized(a["title"]) : S(title),
             AlternativeTitle = Localized(a["title"]), Author = string.Join(" / ", rel.Where(x => S(x?["type"]) == "author").Select(x => S(x?["attributes"]?["name"]))),
@@ -97,14 +103,17 @@ public class Catalog(HttpClient http, IMemoryCache cache)
     }
     public async Task<CatalogPage> Home(int page, int size)
     {
-        // The public homepage endpoint always returns 28 records, even with a different limit.
+        var cacheKey = $"catalog:home:{page}:{size}";
+        if (cache.TryGetValue<CatalogPage>(cacheKey, out var cachedPage) && cachedPage != null)
+            return cachedPage;
+
         size = 28;
         var home = await Get($"/api/series/homepage?page={page}&limit={size}", true);
         var rows = home["data"]!.AsArray();
         if (rows.Count == 0) return new([], (int?)home["total"] ?? 0, page, size);
         var ids = rows.Select(x => S(x?["uuid"])).ToArray();
         var response = await Get("/manga?limit=100&includes[]=cover_art&includes[]=author&" + string.Join("&", ids.Select(x => "ids[]=" + x)));
-        var map = response["data"]!.AsArray().Select(x => Map(x!)).ToDictionary(x => x.Id.ToString());
+        var map = response["data"]!.AsArray().Select(x => Map(x!, isThumbnail: true)).ToDictionary(x => x.Id.ToString());
         var items = new List<MangaCard>();
         foreach (var row in rows) {
             if (!map.TryGetValue(S(row?["uuid"]), out var m)) continue;
@@ -114,10 +123,16 @@ public class Catalog(HttpClient http, IMemoryCache cache)
             items.Add(m);
         }
         await Stats(items);
-        return new(items, (int?)home["total"] ?? items.Count, page, size);
+        var result = new CatalogPage(items, (int?)home["total"] ?? items.Count, page, size);
+        cache.Set(cacheKey, result, new MemoryCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10), Size = 1 });
+        return result;
     }
     public async Task<CatalogPage> Search(int page, int size, string? q, string? genre, string? status, string? country, string? demographic, string? language, string? sort, int? year)
     {
+        var cacheKey = $"catalog:search:{page}:{size}:{q}:{genre}:{status}:{country}:{demographic}:{language}:{sort}:{year}";
+        if (cache.TryGetValue<CatalogPage>(cacheKey, out var cachedSearch) && cachedSearch != null)
+            return cachedSearch;
+
         var order = sort switch { "rating" => "rating", "hot" => "followedCount", "title" => "title", "new" => "createdAt", _ => "latestUploadedChapter" };
         var path = $"/manga?limit={size}&offset={(page - 1) * size}&includes[]=cover_art&includes[]=author&contentRating[]=safe&contentRating[]=suggestive&order[{order}]={(order == "title" ? "asc" : "desc")}";
         if (!string.IsNullOrWhiteSpace(q)) path += "&title=" + E(q.Trim());
@@ -128,15 +143,22 @@ public class Catalog(HttpClient http, IMemoryCache cache)
         path += "&availableTranslatedLanguage[]=" + (language == "en" ? "en" : "vi");
         if (year is >= 1900 and <= 2100) path += "&year=" + year;
         var result = await Get(path);
-        var items = result["data"]!.AsArray().Select(x => Map(x!)).ToList();
+        var items = result["data"]!.AsArray().Select(x => Map(x!, isThumbnail: true)).ToList();
         await Stats(items);
-        return new(items, Math.Min((int?)result["total"] ?? 0, 10000), page, size);
+        var res = new CatalogPage(items, Math.Min((int?)result["total"] ?? 0, 10000), page, size);
+        cache.Set(cacheKey, res, new MemoryCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5), Size = 1 });
+        return res;
     }
     public async Task<MangaCard> Detail(Guid id)
     {
+        var cacheKey = $"catalog:detail:{id}";
+        if (cache.TryGetValue<MangaCard>(cacheKey, out var cachedManga) && cachedManga != null)
+            return cachedManga;
+
         var data = await Get($"/manga/{id}?includes[]=cover_art&includes[]=author");
-        var m = Map(data["data"]!);
+        var m = Map(data["data"]!, isThumbnail: false);
         await Stats([m]);
+        cache.Set(cacheKey, m, new MemoryCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10), Size = 1 });
         return m;
     }
     private ChapterCard MapChapter(JsonNode c)
@@ -152,12 +174,22 @@ public class Catalog(HttpClient http, IMemoryCache cache)
     }
     public async Task<ChapterPage> Chapters(Guid id, string language, int page, bool ascending = false)
     {
+        var cacheKey = $"catalog:chapters:{id}:{language}:{page}:{ascending}";
+        if (cache.TryGetValue<ChapterPage>(cacheKey, out var cachedChapters) && cachedChapters != null)
+            return cachedChapters;
+
         const int size = 100;
         var r = await Get($"/manga/{id}/feed?limit={size}&offset={(page - 1) * size}&translatedLanguage[]={E(language == "en" ? "en" : "vi")}&includes[]=scanlation_group&order[chapter]={(ascending ? "asc" : "desc")}&includeExternalUrl=0");
-        return new(r["data"]!.AsArray().Select(x => MapChapter(x!)).ToList(), Math.Min((int?)r["total"] ?? 0, 10000), page, size);
+        var result = new ChapterPage(r["data"]!.AsArray().Select(x => MapChapter(x!)).ToList(), Math.Min((int?)r["total"] ?? 0, 10000), page, size);
+        cache.Set(cacheKey, result, new MemoryCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5), Size = 1 });
+        return result;
     }
     public async Task<ReaderData> Read(Guid id)
     {
+        var cacheKey = $"catalog:reader:{id}";
+        if (cache.TryGetValue<ReaderData>(cacheKey, out var cachedReader) && cachedReader != null)
+            return cachedReader;
+
         var chapter = (await Get($"/chapter/{id}?includes[]=scanlation_group"))["data"]!;
         var c = MapChapter(chapter);
         var m = await Detail(c.MangaId);
@@ -183,7 +215,9 @@ public class Catalog(HttpClient http, IMemoryCache cache)
         var hash = S(r["chapter"]?["hash"]);
         string ProxyUrl(string url) => "https://services.f-ck.me/v1/image/" + Convert.ToBase64String(Encoding.UTF8.GetBytes(url)).Replace('+', '-').Replace('/', '_');
         string[] Pages(string key, string folder) => r["chapter"]?[key]?.AsArray().Select(x => ProxyUrl($"{baseUrl}/{folder}/{hash}/{E(S(x))}")).ToArray() ?? [];
-        return new(c, m, Pages("data", "data"), Pages("dataSaver", "data-saver"), null, navigation);
+        var result = new ReaderData(c, m, Pages("data", "data"), Pages("dataSaver", "data-saver"), null, navigation);
+        cache.Set(cacheKey, result, new MemoryCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(20), Size = 1 });
+        return result;
     }
     public async Task<object> Tags() => (await Get("/manga/tag"))["data"]!.AsArray().Select(x => new { id = S(x?["id"]), name = Localized(x?["attributes"]?["name"]) }).OrderBy(x => x.name).ToArray();
 }

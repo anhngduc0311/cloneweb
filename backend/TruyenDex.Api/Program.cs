@@ -147,7 +147,7 @@ app.MapGet("/api/catalog/{id:guid}/community", async (Guid id, ClaimsPrincipal u
     Guid? uid = user.Identity?.IsAuthenticated == true ? UserId(user) : null;
     return Results.Ok(new { rating = await db.Ratings.Where(x => x.MangaId == id).Select(x => (double?)x.Score).AverageAsync() ?? 0, votes = await db.Ratings.CountAsync(x => x.MangaId == id), myRating = await db.Ratings.Where(x => x.MangaId == id && x.UserId == uid).Select(x => x.Score).FirstOrDefaultAsync() });
 });
-app.MapGet("/api/catalog/image-proxy", async (string url, IHttpClientFactory factory, CancellationToken ct) => {
+app.MapGet("/api/catalog/image-proxy", async (string url, HttpContext ctx, IHttpClientFactory factory, CancellationToken ct) => {
     if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || 
         (!uri.Host.EndsWith(".mangadex.network") && !uri.Host.EndsWith("mangadex.org") && uri.Host != "services.f-ck.me"))
         return Results.BadRequest(new { message = "Địa chỉ ảnh không hợp lệ." });
@@ -158,6 +158,7 @@ app.MapGet("/api/catalog/image-proxy", async (string url, IHttpClientFactory fac
     var res = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
     if (!res.IsSuccessStatusCode) return Results.StatusCode((int)res.StatusCode);
     var contentType = res.Content.Headers.ContentType?.ToString() ?? "image/jpeg";
+    ctx.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
     return Results.Stream(await res.Content.ReadAsStreamAsync(ct), contentType);
 });
 using (var scope = app.Services.CreateScope()) {

@@ -51,6 +51,8 @@ import { Icon } from './ui';
       <img [src]="pageUrl(url, i)" 
            [alt]="'Trang '+(i+1)+' — '+r.chapter.title" 
            [loading]="i<2?'eager':'lazy'" 
+           decoding="async"
+           [attr.fetchpriority]="i===0?'high':'auto'"
            referrerpolicy="no-referrer" 
            (load)="onLoaded(i)"
            (error)="imageError(i)"
@@ -63,19 +65,55 @@ import { Icon } from './ui';
 }`})
 export class Reader {
  api=inject(Api);store=inject(Store);route=inject(ActivatedRoute);router=inject(Router);data=signal<ReaderData|null>(null);loading=signal(true);error=signal('');failed=signal(new Set<number>());loaded=signal(new Set<number>());fallbackUrls=signal<Map<number,string>>(new Map());showSettings=false;id='';epoch=0;
+ private preloadedUrls=new Set<string>();
+ private preloadedNextId='';
  constructor(){this.route.paramMap.subscribe(p=>{this.id=p.get('id')!;void this.load();});}
- async load(){const n=++this.epoch;this.data.set(null);this.loading.set(true);this.error.set('');this.failed.set(new Set());this.loaded.set(new Set());this.fallbackUrls.set(new Map());try{const r=await this.api.request<ReaderData>('/chapters/'+this.id);if(n!==this.epoch)return;this.data.set(r);void this.store.record(r).catch(e=>this.store.notify(message(e)));window.scrollTo(0,0);}catch(e){if(n===this.epoch)this.error.set(message(e));}finally{if(n===this.epoch)this.loading.set(false);}}
+ async load(){const n=++this.epoch;this.data.set(null);this.loading.set(true);this.error.set('');this.failed.set(new Set());this.loaded.set(new Set());this.fallbackUrls.set(new Map());this.preloadedUrls.clear();this.preloadedNextId='';try{const r=await this.api.request<ReaderData>('/chapters/'+this.id,'GET',undefined,true);if(n!==this.epoch)return;this.data.set(r);void this.store.record(r).catch(e=>this.store.notify(message(e)));window.scrollTo(0,0);this.preloadUpcoming(0,4);}catch(e){if(n===this.epoch)this.error.set(message(e));}finally{if(n===this.epoch)this.loading.set(false);}}
  pages(){const r=this.data();const list=r?(this.store.settings().dataSaver&&r.dataSaverPages.length?r.dataSaverPages:r.pages):[];return list.map(proxyImage);}
  pageUrl(url:string,i:number):string{return this.fallbackUrls().get(i)??url;}
- onLoaded(i:number){this.loaded.update(s=>new Set(s).add(i));}
+ onLoaded(i:number){
+   this.loaded.update(s=>new Set(s).add(i));
+   this.preloadUpcoming(i+1,3);
+   const total=this.pages().length;
+   if(total>0&&i>=total-4){void this.preloadNextChapter();}
+ }
  isLoaded(i:number):boolean{return this.loaded().has(i);}
+ preloadUpcoming(startIndex:number,count:number){
+   const list=this.pages();
+   for(let i=startIndex;i<Math.min(list.length,startIndex+count);i++){
+     const url=this.pageUrl(list[i],i);
+     if(url&&!this.preloadedUrls.has(url)){
+       this.preloadedUrls.add(url);
+       const img=new Image();
+       img.src=url;
+     }
+   }
+ }
+ async preloadNextChapter(){
+   const next=this.next();
+   if(!next||this.preloadedNextId===next.id)return;
+   this.preloadedNextId=next.id;
+   try{
+     const r=await this.api.request<ReaderData>('/chapters/'+next.id,'GET',undefined,true);
+     if(!r)return;
+     const list=(this.store.settings().dataSaver&&r.dataSaverPages?.length?r.dataSaverPages:r.pages)||[];
+     list.slice(0,3).forEach(url=>{
+       const p=proxyImage(url);
+       if(!this.preloadedUrls.has(p)){
+         this.preloadedUrls.add(p);
+         const img=new Image();
+         img.src=p;
+       }
+     });
+   }catch{}
+ }
  position(){return this.data()?.navigation.findIndex(c=>c.id===this.id)??-1;}
  previous(){return this.data()?.navigation[this.position()-1];}next(){return this.data()?.navigation[this.position()+1];}
  go(id:string){void this.router.navigate(['/nettrom/chuong',id]);}
  move(direction:number){const c=direction<0?this.previous():this.next();if(c)this.go(c.id);}
  imageError(i:number){const list=this.pages();const current=this.pageUrl(list[i],i);if(!current.startsWith('/api/catalog/image-proxy')){const fallback='/api/catalog/image-proxy?url='+encodeURIComponent(current);this.fallbackUrls.update(m=>new Map(m).set(i,fallback));return;}this.failed.update(s=>new Set(s).add(i));}
  retry(i:number){this.fallbackUrls.update(m=>{const n=new Map(m);n.delete(i);return n;});this.failed.update(s=>{const n=new Set(s);n.delete(i);return n;});this.loaded.update(s=>{const n=new Set(s);n.delete(i);return n;});}
- quality(dataSaver:boolean){this.failed.set(new Set());this.loaded.set(new Set());this.fallbackUrls.set(new Map());this.store.saveSettings({...this.store.settings(),dataSaver});}
+ quality(dataSaver:boolean){this.failed.set(new Set());this.loaded.set(new Set());this.fallbackUrls.set(new Map());this.preloadedUrls.clear();this.store.saveSettings({...this.store.settings(),dataSaver});this.preloadUpcoming(0,4);}
  width(width:number){this.store.saveSettings({...this.store.settings(),width});}
  @HostListener('window:keydown',['$event']) key(e:KeyboardEvent){if(['INPUT','SELECT','TEXTAREA'].includes((e.target as HTMLElement).tagName))return;if(e.key==='ArrowLeft')this.move(-1);if(e.key==='ArrowRight')this.move(1);}
 }
