@@ -1,13 +1,15 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Caching.Memory;
 using StackExchange.Redis;
+using Meilisearch;
 
 namespace TruyenDex.Api;
 
-public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexer? redis = null)
+public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexer? redis = null, MeilisearchClient? meili = null)
 {
     private const string BaseUrl = "https://truyenggvn.com";
     private static readonly ConcurrentDictionary<Guid, string> MangaSlugMap = new();
@@ -21,17 +23,177 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
         return new Guid(hash);
     }
 
+    public static string RemoveDiacritics(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return "";
+        var normalizedString = text.Normalize(NormalizationForm.FormD);
+        var sb = new StringBuilder();
+        foreach (var c in normalizedString)
+        {
+            var uc = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c);
+            if (uc != System.Globalization.UnicodeCategory.NonSpacingMark)
+            {
+                if (c is 'đ' or 'Đ') sb.Append('d');
+                else sb.Append(c);
+            }
+        }
+        return sb.ToString().Normalize(NormalizationForm.FormC);
+    }
+
     public static string NormalizeTitle(string? title)
     {
         if (string.IsNullOrWhiteSpace(title)) return "";
-        var s = title.Trim().ToLowerInvariant();
+        var unaccented = RemoveDiacritics(title).ToLowerInvariant();
         var sb = new StringBuilder();
-        foreach (var c in s)
+        foreach (var c in unaccented)
         {
-            if (char.IsLetterOrDigit(c))
+            if (char.IsAsciiLetterOrDigit(c))
                 sb.Append(c);
         }
         return sb.ToString();
+    }
+
+    public static HashSet<string> GetMatchKeys(string? title, string? altTitles = null)
+    {
+        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var mainNorm = NormalizeTitle(title);
+        if (!string.IsNullOrEmpty(mainNorm) && mainNorm.Length >= 3) keys.Add(mainNorm);
+
+        var altNorm = NormalizeTitle(altTitles);
+        if (!string.IsNullOrEmpty(altNorm) && altNorm.Length >= 3) keys.Add(altNorm);
+
+        if (!string.IsNullOrWhiteSpace(altTitles))
+        {
+            var parts = altTitles.Split([';', '/', '|', '\n'], StringSplitOptions.RemoveEmptyEntries);
+            foreach (var part in parts)
+            {
+                var pNorm = NormalizeTitle(part);
+                if (!string.IsNullOrEmpty(pNorm) && pNorm.Length >= 3) keys.Add(pNorm);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(title))
+        {
+            var parts = title.Split([';', '/', '|', '\n'], StringSplitOptions.RemoveEmptyEntries);
+            foreach (var part in parts)
+            {
+                var pNorm = NormalizeTitle(part);
+                if (!string.IsNullOrEmpty(pNorm) && pNorm.Length >= 3) keys.Add(pNorm);
+            }
+        }
+
+        return keys;
+    }
+
+    public static bool IsSameManga(string? titleA, string? altA, string? titleB, string? altB)
+    {
+        var keysA = GetMatchKeys(titleA, altA);
+        var keysB = GetMatchKeys(titleB, altB);
+
+        foreach (var ka in keysA)
+        {
+            if (keysB.Contains(ka)) return true;
+        }
+
+        var normA = NormalizeTitle(titleA);
+        var normB = NormalizeTitle(titleB);
+        if (normA.Length >= 10 && normB.Length >= 10)
+        {
+            if (normA.Contains(normB) || normB.Contains(normA))
+            {
+                double ratio = (double)Math.Min(normA.Length, normB.Length) / Math.Max(normA.Length, normB.Length);
+                if (ratio >= 0.80) return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static string ToSlug(string? title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return "";
+        var unaccented = RemoveDiacritics(title).ToLowerInvariant();
+        var s = Regex.Replace(unaccented, @"[^\w\s-]", "");
+        s = Regex.Replace(s, @"\s+", "-").Trim('-');
+        return s;
+    }
+
+    private void RegisterManga(Guid id, string slug)
+    {
+        MangaSlugMap[id] = slug;
+        _ = CacheSetString($"truyengg:slug:{id}", slug, TimeSpan.FromDays(30));
+    }
+
+    private void RegisterChapter(Guid chapId, string chapHref, Guid mangaId)
+    {
+        ChapterUrlMap[chapId] = chapHref;
+        ChapterMangaMap[chapId] = mangaId;
+        _ = CacheSetString($"truyengg:chap:{chapId}", chapHref, TimeSpan.FromDays(30));
+        _ = CacheSetString($"truyengg:chap_manga:{chapId}", mangaId.ToString(), TimeSpan.FromDays(30));
+    }
+
+    private async Task<string?> ResolveSlug(Guid id)
+    {
+        if (MangaSlugMap.TryGetValue(id, out var slug) && !string.IsNullOrEmpty(slug)) return slug;
+        slug = await CacheGetString($"truyengg:slug:{id}");
+        if (!string.IsNullOrEmpty(slug))
+        {
+            MangaSlugMap[id] = slug;
+            return slug;
+        }
+
+        if (meili != null)
+        {
+            try
+            {
+                var index = meili.Index("mangas");
+                var doc = await index.GetDocumentAsync<MangaCard>(id.ToString());
+                if (doc != null && !string.IsNullOrEmpty(doc.Title))
+                {
+                    var baseSlug = ToSlug(doc.Title);
+                    if (!string.IsNullOrEmpty(baseSlug))
+                    {
+                        if (CreateGuid("truyengg:manga:" + baseSlug) == id)
+                        {
+                            RegisterManga(id, baseSlug);
+                            return baseSlug;
+                        }
+                        for (int i = 1; i <= 35000; i++)
+                        {
+                            var candidate = $"{baseSlug}-{i}";
+                            if (CreateGuid("truyengg:manga:" + candidate) == id)
+                            {
+                                RegisterManga(id, candidate);
+                                return candidate;
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        return null;
+    }
+
+    private async Task<string?> ResolveChapterUrl(Guid chapterId)
+    {
+        if (ChapterUrlMap.TryGetValue(chapterId, out var url) && !string.IsNullOrEmpty(url)) return url;
+        url = await CacheGetString($"truyengg:chap:{chapterId}");
+        if (!string.IsNullOrEmpty(url))
+        {
+            ChapterUrlMap[chapterId] = url;
+            return url;
+        }
+
+        var mangaIdStr = await CacheGetString($"truyengg:chap_manga:{chapterId}");
+        if (!string.IsNullOrEmpty(mangaIdStr) && Guid.TryParse(mangaIdStr, out var mId))
+        {
+            await GetChapters(mId, 1, 500);
+            if (ChapterUrlMap.TryGetValue(chapterId, out url)) return url;
+        }
+
+        return null;
     }
 
     private async Task<string?> CacheGetString(string key)
@@ -160,17 +322,19 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
 
             var lastChapMatch = Regex.Match(block, @"class=""last_chapter"">\s*<a href=""([^""]+)""[^>]*>([^<]+)<\/a>");
             var mangaId = CreateGuid("truyengg:manga:" + slug);
-            MangaSlugMap[mangaId] = slug;
+            RegisterManga(mangaId, slug);
 
             var chapters = new List<ChapterCard>();
             if (lastChapMatch.Success)
             {
                 var chapHref = lastChapMatch.Groups[1].Value;
                 var chapTitle = StripHtml(lastChapMatch.Groups[2].Value);
+                var numMatch = Regex.Match(chapTitle, @"\d+(\.\d+)?");
+                decimal.TryParse(numMatch.Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var num);
+
                 var chapId = CreateGuid("truyengg:chap:" + chapHref);
-                ChapterUrlMap[chapId] = chapHref;
-                ChapterMangaMap[chapId] = mangaId;
-                chapters.Add(new ChapterCard(chapId, mangaId, chapTitle, 0, "vi", updatedAt, "TruyenGG"));
+                RegisterChapter(chapId, chapHref, mangaId);
+                chapters.Add(new ChapterCard(chapId, mangaId, chapTitle, num, "vi", updatedAt, "TruyenGG"));
             }
 
             var card = new MangaCard
@@ -183,7 +347,7 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
                 Description = "",
                 Genres = genres,
                 Status = block.Contains("Hoàn thành") ? "completed" : "ongoing",
-                Country = genres.Contains("Manhwa") ? "ko" : genres.Contains("Manhua") ? "zh" : genres.Contains("Manga") ? "ja" : "vi",
+                Country = genres.Contains("Manhwa") ? "ko" : genres.Contains("Manhua") ? "zh" : "ja",
                 ContentRating = "safe",
                 Follows = follows,
                 Rating = 8.5,
@@ -199,10 +363,8 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
 
     public async Task<List<MangaCard>> GetLatest(int page = 1)
     {
-        var url = page <= 1 
-            ? $"{BaseUrl}/truyen-moi-cap-nhat.html" 
-            : $"{BaseUrl}/truyen-moi-cap-nhat/trang-{page}.html";
-
+        var p = Math.Max(1, page);
+        var url = $"{BaseUrl}/truyen-moi-cap-nhat/trang-{p}.html?country=4";
         var html = await FetchHtml(url);
         if (string.IsNullOrEmpty(html)) return [];
         return ParseGridHtml(html);
@@ -211,17 +373,78 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
     public async Task<List<MangaCard>> Search(string q, int page = 1)
     {
         if (string.IsNullOrWhiteSpace(q)) return await GetLatest(page);
-        var url = page <= 1
-            ? $"{BaseUrl}/tim-kiem.html?q={Uri.EscapeDataString(q)}"
-            : $"{BaseUrl}/tim-kiem/trang-{page}.html?q={Uri.EscapeDataString(q)}";
-        var html = await FetchHtml(url);
-        if (string.IsNullOrEmpty(html)) return [];
-        return ParseGridHtml(html);
+        var cacheKey = $"truyengg:search:{q.Trim().ToLowerInvariant()}:{page}";
+        var cached = await CacheGetString(cacheKey);
+        if (cached != null)
+        {
+            try { return JsonSerializer.Deserialize<List<MangaCard>>(cached) ?? []; } catch { }
+        }
+
+        var items = new List<MangaCard>();
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/frontend/search/search");
+            req.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+            req.Headers.Referrer = new Uri(BaseUrl);
+            req.Headers.Add("X-Requested-With", "XMLHttpRequest");
+            req.Content = new FormUrlEncodedContent(new Dictionary<string, string> { { "search", q.Trim() } });
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+            using var res = await http.SendAsync(req, cts.Token);
+            if (res.IsSuccessStatusCode)
+            {
+                var html = await res.Content.ReadAsStringAsync(cts.Token);
+                if (!string.IsNullOrWhiteSpace(html))
+                {
+                    var regex = new Regex(@"<li>\s*<a href=""([^""]+)""[^>]*>[\s\S]*?<img[^>]*src=""([^""]+)""[\s\S]*?<p class=""name"">([^<]+)<\/p>\s*<p class=""name_other"">([^<]+)<\/p>[\s\S]*?<\/li>", RegexOptions.Compiled);
+                    var matches = regex.Matches(html);
+
+                    foreach (Match m in matches)
+                    {
+                        var href = m.Groups[1].Value.Trim();
+                        var coverUrl = m.Groups[2].Value.Trim();
+                        var name = StripHtml(m.Groups[3].Value);
+                        var otherName = StripHtml(m.Groups[4].Value);
+
+                        var slug = href.Replace("https://truyenggvn.com", "").Replace("/truyen-tranh/", "").Trim('/');
+                        if (string.IsNullOrEmpty(slug)) continue;
+
+                        if (coverUrl.StartsWith("//")) coverUrl = "https:" + coverUrl;
+                        else if (coverUrl.StartsWith("/")) coverUrl = BaseUrl + coverUrl;
+
+                        var mangaId = CreateGuid("truyengg:manga:" + slug);
+                        RegisterManga(mangaId, slug);
+
+                        items.Add(new MangaCard
+                        {
+                            Id = mangaId,
+                            Title = name,
+                            AlternativeTitle = string.IsNullOrEmpty(otherName) ? name : otherName,
+                            Author = "Đang cập nhật",
+                            Cover = !string.IsNullOrEmpty(coverUrl) ? "/api/catalog/image-proxy?url=" + Uri.EscapeDataString(coverUrl) : "/cover-placeholder.svg",
+                            Country = "ja",
+                            ContentRating = "safe",
+                            Rating = 8.5,
+                            UpdatedAt = DateTime.UtcNow
+                        });
+                    }
+                }
+            }
+
+            if (items.Count > 0)
+            {
+                await CacheSetString(cacheKey, JsonSerializer.Serialize(items), TimeSpan.FromMinutes(10));
+            }
+        }
+        catch { }
+
+        return items;
     }
 
     public async Task<MangaCard?> GetDetail(Guid id)
     {
-        if (!MangaSlugMap.TryGetValue(id, out var slug)) return null;
+        var slug = await ResolveSlug(id);
+        if (string.IsNullOrEmpty(slug)) return null;
         var url = $"{BaseUrl}/truyen-tranh/{slug}";
         var html = await FetchHtml(url);
         if (string.IsNullOrEmpty(html)) return null;
@@ -267,7 +490,7 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
             Description = desc,
             Genres = genres.ToArray(),
             Status = status,
-            Country = genres.Contains("Manhwa") ? "ko" : genres.Contains("Manhua") ? "zh" : genres.Contains("Manga") ? "ja" : "vi",
+            Country = genres.Contains("Manhwa") ? "ko" : genres.Contains("Manhua") ? "zh" : "ja",
             ContentRating = "safe",
             Follows = follows,
             Rating = 8.5,
@@ -277,7 +500,8 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
 
     public async Task<ChapterPage?> GetChapters(Guid id, int page = 1, int size = 100, bool ascending = false)
     {
-        if (!MangaSlugMap.TryGetValue(id, out var slug)) return null;
+        var slug = await ResolveSlug(id);
+        if (string.IsNullOrEmpty(slug)) return null;
         var url = $"{BaseUrl}/truyen-tranh/{slug}";
         var html = await FetchHtml(url);
         if (string.IsNullOrEmpty(html)) return null;
@@ -295,8 +519,7 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
             decimal.TryParse(numMatch.Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var num);
 
             var chapId = CreateGuid("truyengg:chap:" + chapHref);
-            ChapterUrlMap[chapId] = chapHref;
-            ChapterMangaMap[chapId] = id;
+            RegisterChapter(chapId, chapHref, id);
 
             allChapters.Add(new ChapterCard(chapId, id, chapTitle, num, "vi", publishedAt, "TruyenGG"));
         }
@@ -315,9 +538,61 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
         return new ChapterPage(paged, total, page, size);
     }
 
+    public async Task<List<ChapterCard>?> FindMatchingChapters(Guid mangaId, string title, string? altTitles = null)
+    {
+        try
+        {
+            var searchResults = await Search(title);
+            if (searchResults.Count == 0 && !string.IsNullOrWhiteSpace(altTitles))
+            {
+                var firstAlt = altTitles.Split([';', '/', '|', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
+                if (!string.IsNullOrWhiteSpace(firstAlt))
+                {
+                    searchResults = await Search(firstAlt);
+                }
+            }
+
+            var matched = searchResults.FirstOrDefault(gg => IsSameManga(title, altTitles, gg.Title, gg.AlternativeTitle));
+            if (matched != null)
+            {
+                var slug = await ResolveSlug(matched.Id);
+                if (!string.IsNullOrEmpty(slug))
+                {
+                    var url = $"{BaseUrl}/truyen-tranh/{slug}";
+                    var html = await FetchHtml(url);
+                    if (!string.IsNullOrEmpty(html))
+                    {
+                        var chapMatches = Regex.Matches(html, @"<div class=""works-chapter-item"">\s*<div class=""col-md-10[^""]*name-chap"">\s*<a[^>]*href=""([^""]+)""[^>]*>([^<]+)<\/a>\s*<\/div>\s*<div class=""col-md-2[^""]*time-chap"">\s*([^<]+)\s*<\/div>");
+                        var chaps = new List<ChapterCard>();
+                        foreach (Match cm in chapMatches)
+                        {
+                            var chapHref = cm.Groups[1].Value;
+                            var chapTitle = StripHtml(cm.Groups[2].Value);
+                            var timeStr = cm.Groups[3].Value.Trim();
+                            var publishedAt = ParseTimeAgo(timeStr);
+
+                            var numMatch = Regex.Match(chapTitle, @"\d+(\.\d+)?");
+                            decimal.TryParse(numMatch.Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var num);
+
+                            var chapId = CreateGuid("truyengg:chap:" + chapHref);
+                            RegisterChapter(chapId, chapHref, mangaId);
+
+                            chaps.Add(new ChapterCard(chapId, mangaId, chapTitle, num, "vi", publishedAt, "TruyenGG"));
+                        }
+                        return chaps;
+                    }
+                }
+            }
+        }
+        catch { }
+
+        return null;
+    }
+
     public async Task<ReaderData?> GetReader(Guid chapterId)
     {
-        if (!ChapterUrlMap.TryGetValue(chapterId, out var chapHref)) return null;
+        var chapHref = await ResolveChapterUrl(chapterId);
+        if (string.IsNullOrEmpty(chapHref)) return null;
         var mangaId = ChapterMangaMap.GetValueOrDefault(chapterId);
         var url = chapHref.StartsWith("http") ? chapHref : BaseUrl + (chapHref.StartsWith("/") ? "" : "/") + chapHref;
 
