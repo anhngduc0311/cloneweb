@@ -181,7 +181,8 @@ public class Catalog(HttpClient http, IMemoryCache cache)
         var baseUrl = S(r["baseUrl"]).TrimEnd('/');
         if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) || uri.Scheme != "https") throw new UpstreamException("Địa chỉ máy chủ ảnh không hợp lệ.");
         var hash = S(r["chapter"]?["hash"]);
-        string[] Pages(string key, string folder) => r["chapter"]?[key]?.AsArray().Select(x => $"{baseUrl}/{folder}/{hash}/{E(S(x))}").ToArray() ?? [];
+        string ProxyUrl(string url) => "https://services.f-ck.me/v1/image/" + Convert.ToBase64String(Encoding.UTF8.GetBytes(url)).Replace('+', '-').Replace('/', '_');
+        string[] Pages(string key, string folder) => r["chapter"]?[key]?.AsArray().Select(x => ProxyUrl($"{baseUrl}/{folder}/{hash}/{E(S(x))}")).ToArray() ?? [];
         return new(c, m, Pages("data", "data"), Pages("dataSaver", "data-saver"), null, navigation);
     }
     public async Task<object> Tags() => (await Get("/manga/tag"))["data"]!.AsArray().Select(x => new { id = S(x?["id"]), name = Localized(x?["attributes"]?["name"]) }).OrderBy(x => x.name).ToArray();
