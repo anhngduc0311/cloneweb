@@ -36,6 +36,9 @@ if (!string.IsNullOrWhiteSpace(meiliUrl)) {
 }
 
 builder.Services.AddHttpClient<Catalog>(c => { c.Timeout = TimeSpan.FromSeconds(15); c.DefaultRequestHeaders.UserAgent.ParseAdd("TruyenDexClone/1.0"); });
+builder.Services.AddHttpClient<TruyenGg>(c => { c.Timeout = TimeSpan.FromSeconds(15); c.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"); });
+builder.Services.AddSingleton<TruyenGg>();
+builder.Services.AddScoped<Catalog>();
 builder.Services.AddScoped<PasswordHasher<AppUser>>();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(o => o.TokenValidationParameters = new() {
     ValidateIssuer = true, ValidateAudience = true, ValidateLifetime = true, ValidateIssuerSigningKey = true,
@@ -102,7 +105,7 @@ app.MapGet("/api/health", async (AppDb db, IServiceProvider sp) => {
             meilisearch = 7709,
             postgres = 54329
         },
-        source = "TruyenDex / MangaDex"
+        source = "TruyenDex / MangaDex / TruyenGGVN"
     });
 });
 app.MapPost("/api/auth/register", async (RegisterRequest req, AppDb db, PasswordHasher<AppUser> hasher) => {
@@ -198,13 +201,16 @@ app.MapGet("/api/catalog/{id:guid}/community", async (Guid id, ClaimsPrincipal u
     return Results.Ok(new { rating = await db.Ratings.Where(x => x.MangaId == id).Select(x => (double?)x.Score).AverageAsync() ?? 0, votes = await db.Ratings.CountAsync(x => x.MangaId == id), myRating = await db.Ratings.Where(x => x.MangaId == id && x.UserId == uid).Select(x => x.Score).FirstOrDefaultAsync() });
 });
 app.MapGet("/api/catalog/image-proxy", async (string url, HttpContext ctx, IHttpClientFactory factory, CancellationToken ct) => {
-    if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || 
-        (!uri.Host.EndsWith(".mangadex.network") && !uri.Host.EndsWith("mangadex.org") && uri.Host != "services.f-ck.me"))
+    if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
         return Results.BadRequest(new { message = "Địa chỉ ảnh không hợp lệ." });
     var client = factory.CreateClient();
     client.Timeout = TimeSpan.FromSeconds(25);
     var req = new HttpRequestMessage(HttpMethod.Get, url);
-    req.Headers.UserAgent.ParseAdd("TruyenDexClone/1.0");
+    req.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+    if (uri.Host.Contains("truyengg") || uri.Host.Contains("hinhhinh") || uri.Host.Contains("truyenvua") || uri.Host.Contains("tintruyen"))
+    {
+        req.Headers.Referrer = new Uri("https://truyenggvn.com/");
+    }
     var res = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
     if (!res.IsSuccessStatusCode) return Results.StatusCode((int)res.StatusCode);
     var contentType = res.Content.Headers.ContentType?.ToString() ?? "image/jpeg";
