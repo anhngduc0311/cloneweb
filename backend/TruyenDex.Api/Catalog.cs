@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Caching.Memory;
@@ -190,9 +191,71 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         return false;
     }
 
+    private static readonly Regex Chapter1Regex = new(
+        @"(?:^|[^\w\d])(?:chương|chapter|chap|ch|c)[\s\._-]*0*1(?:\.0+|\.5)?(?=[^\d]|$)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex OneshotRegex = new(
+        @"(?:oneshot|one-shot|one\s+shot|truyện\s+ngắn)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    public static bool HasChapter1(MangaCard? m)
+    {
+        if (m == null || m.Chapters == null || m.Chapters.Count == 0) return false;
+        foreach (var c in m.Chapters)
+        {
+            if (c == null) continue;
+            if (c.Number >= 0.5m && c.Number <= 1.5m) return true;
+            if (string.IsNullOrWhiteSpace(c.Title)) continue;
+            var t = c.Title.Trim();
+            if (t.Equals("Oneshot", StringComparison.OrdinalIgnoreCase) ||
+                t.Equals("One-shot", StringComparison.OrdinalIgnoreCase) ||
+                t.Equals("Chương 1", StringComparison.OrdinalIgnoreCase) ||
+                t.Equals("Chapter 1", StringComparison.OrdinalIgnoreCase) ||
+                t.Equals("Chap 1", StringComparison.OrdinalIgnoreCase) ||
+                t.Equals("C1", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+            if (Chapter1Regex.IsMatch(t) || OneshotRegex.IsMatch(t))
+            {
+                var numMatch = Regex.Match(t, @"(?:chương|chapter|chap|ch|c)\s*(\d+(?:\.\d+)?)", RegexOptions.IgnoreCase);
+                if (numMatch.Success && decimal.TryParse(numMatch.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var n))
+                {
+                    if (n >= 0.5m && n <= 1.5m) return true;
+                    if (n > 1.5m) continue;
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static bool ShouldPreferCandidate(MangaCard candidate, MangaCard existing)
+    {
+        bool candHasCh1 = HasChapter1(candidate);
+        bool existHasCh1 = HasChapter1(existing);
+        if (candHasCh1 && !existHasCh1) return true;
+        if (!candHasCh1 && existHasCh1) return false;
+
+        int candChaps = candidate.Chapters?.Count ?? 0;
+        int existChaps = existing.Chapters?.Count ?? 0;
+        if (candChaps > 0 && existChaps == 0) return true;
+        if (existChaps > 0 && candChaps == 0) return false;
+
+        if (candChaps > 0 && existChaps > 0)
+        {
+            var candMin = candidate.Chapters!.Min(c => c.Number > 0 ? c.Number : 99999m);
+            var existMin = existing.Chapters!.Min(c => c.Number > 0 ? c.Number : 99999m);
+            if (candMin < existMin) return true;
+        }
+
+        return false;
+    }
+
     public async Task<CatalogPage> Home(int page, int size)
     {
-        var cacheKey = $"catalog:home:v8:{page}:{size}";
+        var cacheKey = $"catalog:home:v10:{page}:{size}";
         var cachedPage = await CacheGet<CatalogPage>(cacheKey);
         if (cachedPage != null) return cachedPage;
 
@@ -214,7 +277,16 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
                     if (IsManhwaOrManhua(m)) continue;
                     // Preserve homepage order: last chapter update descending, not manga metadata update.
                     m.UpdatedAt = Date(row?["last_chapter_updated_at"]);
-                    m.Chapters = row?["chapters"]?.AsArray().Select(c => new ChapterCard(Guid.Parse(S(c?["uuid"])), m.Id, S(c?["title"]), 0, "vi", Date(c?["md_updated_at"]))).ToList() ?? [];
+                    m.Chapters = row?["chapters"]?.AsArray().Select(c => {
+                        var chapTitle = S(c?["title"]);
+                        var numMatch = Regex.Match(chapTitle, @"(?:\b|[^\w\d])(?:chương|chapter|chap|ch|c)?[\s\._-]*(\d+(?:\.\d+)?)", RegexOptions.IgnoreCase);
+                        decimal num = 0;
+                        if (numMatch.Success)
+                        {
+                            decimal.TryParse(numMatch.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out num);
+                        }
+                        return new ChapterCard(Guid.Parse(S(c?["uuid"])), m.Id, chapTitle, num, "vi", Date(c?["md_updated_at"]));
+                    }).ToList() ?? [];
                     mangaDexItems.Add(m);
                 }
                 await Stats(mangaDexItems);
@@ -245,16 +317,22 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         }
         catch { }
 
-        // Deduplication: if title or alternative title matches any existing item, skip it
+        // Deduplication: if title or alternative title matches any existing item, prioritize the one with Chapter 1
         var merged = new List<MangaCard>();
         foreach (var m in mangaDexItems)
         {
             bool isDuplicate = false;
-            foreach (var existing in merged)
+            for (int i = 0; i < merged.Count; i++)
             {
+                var existing = merged[i];
                 if (TruyenGg.IsSameManga(existing.Title, existing.AlternativeTitle, m.Title, m.AlternativeTitle))
                 {
                     isDuplicate = true;
+                    // Prioritize story with chapter 1
+                    if (ShouldPreferCandidate(m, existing))
+                    {
+                        merged[i] = m;
+                    }
                     break;
                 }
             }
@@ -267,11 +345,17 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         foreach (var gg in ggItems)
         {
             bool isDuplicate = false;
-            foreach (var m in merged)
+            for (int i = 0; i < merged.Count; i++)
             {
-                if (TruyenGg.IsSameManga(m.Title, m.AlternativeTitle, gg.Title, gg.AlternativeTitle))
+                var existing = merged[i];
+                if (TruyenGg.IsSameManga(existing.Title, existing.AlternativeTitle, gg.Title, gg.AlternativeTitle))
                 {
                     isDuplicate = true;
+                    // Prioritize story with chapter 1
+                    if (ShouldPreferCandidate(gg, existing))
+                    {
+                        merged[i] = gg;
+                    }
                     break;
                 }
             }
@@ -291,7 +375,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
     public async Task<CatalogPage> Search(int page, int size, string? q, string? genre, string? status, string? country, string? demographic, string? language, string? sort, int? year)
     {
-        var cacheKey = $"catalog:search:v5:{page}:{size}:{q}:{genre}:{status}:{country}:{demographic}:{language}:{sort}:{year}";
+        var cacheKey = $"catalog:search:v6:{page}:{size}:{q}:{genre}:{status}:{country}:{demographic}:{language}:{sort}:{year}";
         var cachedSearch = await CacheGet<CatalogPage>(cacheKey);
         if (cachedSearch != null) return cachedSearch;
 
@@ -330,7 +414,21 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             total = Math.Min((int?)result["total"] ?? 0, 10000);
             foreach (var m in rawItems)
             {
-                if (!items.Any(existing => TruyenGg.IsSameManga(existing.Title, existing.AlternativeTitle, m.Title, m.AlternativeTitle)))
+                bool isDuplicate = false;
+                for (int i = 0; i < items.Count; i++)
+                {
+                    var existing = items[i];
+                    if (TruyenGg.IsSameManga(existing.Title, existing.AlternativeTitle, m.Title, m.AlternativeTitle))
+                    {
+                        isDuplicate = true;
+                        if (ShouldPreferCandidate(m, existing))
+                        {
+                            items[i] = m;
+                        }
+                        break;
+                    }
+                }
+                if (!isDuplicate)
                 {
                     items.Add(m);
                 }
@@ -347,11 +445,16 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
                 foreach (var gg in ggResults)
                 {
                     bool isDuplicate = false;
-                    foreach (var m in items)
+                    for (int i = 0; i < items.Count; i++)
                     {
-                        if (TruyenGg.IsSameManga(m.Title, m.AlternativeTitle, gg.Title, gg.AlternativeTitle))
+                        var existing = items[i];
+                        if (TruyenGg.IsSameManga(existing.Title, existing.AlternativeTitle, gg.Title, gg.AlternativeTitle))
                         {
                             isDuplicate = true;
+                            if (ShouldPreferCandidate(gg, existing))
+                            {
+                                items[i] = gg;
+                            }
                             break;
                         }
                     }
@@ -414,7 +517,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
     public async Task<ChapterPage> Chapters(Guid id, string language, int page, bool ascending = false)
     {
-        var cacheKey = $"catalog:chapters:v4:{id}:{language}:{page}:{ascending}";
+        var cacheKey = $"catalog:chapters:v8:{id}:{language}:{page}:{ascending}";
         var cachedChapters = await CacheGet<ChapterPage>(cacheKey);
         if (cachedChapters != null) return cachedChapters;
 
@@ -430,7 +533,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         var mdChapters = r["data"]!.AsArray().Select(x => MapChapter(x!)).ToList();
         var total = Math.Min((int?)r["total"] ?? 0, 10000);
 
-        // If language is Vietnamese, merge supplemental chapters from TruyenGG (e.g. newer chapters)
+        // If language is Vietnamese, merge supplemental chapters from TruyenGG (e.g. newer chapters and chapter 1)
         if (language == "vi" || string.IsNullOrEmpty(language))
         {
             try
@@ -450,7 +553,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
                                 mdChapters = mdChapters.OrderBy(c => c.Number).ThenBy(c => c.PublishedAt).ToList();
                             else
                                 mdChapters = mdChapters.OrderByDescending(c => c.Number).ThenByDescending(c => c.PublishedAt).ToList();
-                            total = mdChapters.Count;
+                            total = Math.Max(total, mdChapters.Count);
                         }
                     }
                 }
@@ -458,7 +561,8 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             catch { }
         }
 
-        var result = new ChapterPage(mdChapters, total, page, size);
+        var pagedItems = mdChapters.Count > size ? mdChapters.Skip((page - 1) * size).Take(size).ToList() : mdChapters;
+        var result = new ChapterPage(pagedItems, Math.Max(total, mdChapters.Count), page, size);
         await CacheSet(cacheKey, result, TimeSpan.FromMinutes(5));
         return result;
     }

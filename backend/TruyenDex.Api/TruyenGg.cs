@@ -329,8 +329,12 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
             {
                 var chapHref = lastChapMatch.Groups[1].Value;
                 var chapTitle = StripHtml(lastChapMatch.Groups[2].Value);
-                var numMatch = Regex.Match(chapTitle, @"\d+(\.\d+)?");
-                decimal.TryParse(numMatch.Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var num);
+                var numMatch = Regex.Match(chapTitle, @"(?:\b|[^\w\d])(?:chương|chapter|chap|ch|c)?[\s\._-]*(\d+(?:\.\d+)?)", RegexOptions.IgnoreCase);
+                decimal num = 0;
+                if (numMatch.Success)
+                {
+                    decimal.TryParse(numMatch.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out num);
+                }
 
                 var chapId = CreateGuid("truyengg:chap:" + chapHref);
                 RegisterChapter(chapId, chapHref, mangaId);
@@ -396,7 +400,7 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
                 var html = await res.Content.ReadAsStringAsync(cts.Token);
                 if (!string.IsNullOrWhiteSpace(html))
                 {
-                    var regex = new Regex(@"<li>\s*<a href=""([^""]+)""[^>]*>[\s\S]*?<img[^>]*src=""([^""]+)""[\s\S]*?<p class=""name"">([^<]+)<\/p>\s*<p class=""name_other"">([^<]+)<\/p>[\s\S]*?<\/li>", RegexOptions.Compiled);
+                    var regex = new Regex(@"<li>\s*<a href=""([^""]+)""[^>]*>[\s\S]*?<img[^>]*src=""([^""]+)""[\s\S]*?<p class=""name"">([^<]+)<\/p>\s*<p class=""name_other"">([^<]*)<\/p>[\s\S]*?<\/li>", RegexOptions.Compiled);
                     var matches = regex.Matches(html);
 
                     foreach (Match m in matches)
@@ -515,8 +519,12 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
             var timeStr = cm.Groups[3].Value.Trim();
             var publishedAt = ParseTimeAgo(timeStr);
 
-            var numMatch = Regex.Match(chapTitle, @"\d+(\.\d+)?");
-            decimal.TryParse(numMatch.Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var num);
+            var numMatch = Regex.Match(chapTitle, @"(?:\b|[^\w\d])(?:chương|chapter|chap|ch|c)?[\s\._-]*(\d+(?:\.\d+)?)", RegexOptions.IgnoreCase);
+            decimal num = 0;
+            if (numMatch.Success)
+            {
+                decimal.TryParse(numMatch.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out num);
+            }
 
             var chapId = CreateGuid("truyengg:chap:" + chapHref);
             RegisterChapter(chapId, chapHref, id);
@@ -571,8 +579,12 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
                             var timeStr = cm.Groups[3].Value.Trim();
                             var publishedAt = ParseTimeAgo(timeStr);
 
-                            var numMatch = Regex.Match(chapTitle, @"\d+(\.\d+)?");
-                            decimal.TryParse(numMatch.Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var num);
+                            var numMatch = Regex.Match(chapTitle, @"(?:\b|[^\w\d])(?:chương|chapter|chap|ch|c)?[\s\._-]*(\d+(?:\.\d+)?)", RegexOptions.IgnoreCase);
+                            decimal num = 0;
+                            if (numMatch.Success)
+                            {
+                                decimal.TryParse(numMatch.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out num);
+                            }
 
                             var chapId = CreateGuid("truyengg:chap:" + chapHref);
                             RegisterChapter(chapId, chapHref, mangaId);
