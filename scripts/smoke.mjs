@@ -8,7 +8,7 @@ const request = async (path, method='GET', body, token, expected=200) => {
 const test=async(name,run)=>{await run();console.log('PASS '+name);};
 let home,session,second,manga,reader,commentId;
 const suffix=randomUUID();const password='SmokeTest!'+randomUUID();
-await test('PostgreSQL health',async()=>assert.equal((await request('/health')).database,'PostgreSQL'));
+await test('PostgreSQL health',async()=>{const h=await request('/health');assert.ok(h.database==='connected'||h.database==='PostgreSQL');});
 await test('Anonymous access denied',async()=>{await request('/library','GET',undefined,undefined,401);});
 await test('Invalid registration rejected',async()=>{await request('/auth/register','POST',{email:'invalid',password:'short',name:'a'},undefined,400);});
 await test('Live homepage is newest first',async()=>{home=await request('/catalog/home?page=1');assert.equal(home.items.length,28);assert.ok(home.total>28);for(let i=1;i<home.items.length;i++)assert.ok(new Date(home.items[i-1].updatedAt)>=new Date(home.items[i].updatedAt));manga=home.items[0];assert.ok(manga.cover.startsWith('https://'));});

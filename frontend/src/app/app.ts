@@ -117,13 +117,13 @@ export class App {
 
   selectManga(m: Manga) {
     this.suggestionsOpen.set(false);
-    void this.router.navigate(['/nettrom/truyen-tranh', m.id]);
+    void this.router.navigate(['/truyen-tranh', m.id]);
   }
 
   search() {
     this.suggestionsOpen.set(false);
     if (!this.query.trim()) return;
-    void this.router.navigate(['/nettrom/tim-truyen-nang-cao'], { queryParams: { q: this.query.trim() } });
+    void this.router.navigate(['/tim-truyen-nang-cao'], { queryParams: { q: this.query.trim() } });
   }
 
   coverFallback(e: Event) {

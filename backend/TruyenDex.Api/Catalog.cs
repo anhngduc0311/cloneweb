@@ -36,6 +36,7 @@ public class UpstreamException(string message, int status = 502) : Exception(mes
 public class Catalog(HttpClient http, IMemoryCache cache, IConnectionMultiplexer? redis = null, MeilisearchClient? meili = null)
 {
     private static readonly SemaphoreSlim Gate = new(1, 1);
+    private static readonly string[] SiteOrigins = ["https://api.truyendex.cc", "https://api.truyendex.xyz"];
     private static readonly string[] Origins = ["https://api-proxy.truyendex.cc/mangadex", "https://api-proxy.truyendex.xyz/mangadex", "https://api.mangadex.org"];
     private static string S(JsonNode? n) => n?.ToString() ?? "";
     private static string E(string s) => Uri.EscapeDataString(s);
@@ -77,15 +78,17 @@ public class Catalog(HttpClient http, IMemoryCache cache, IConnectionMultiplexer
         {
             cached = await CacheGet<string>(key);
             if (cached != null) return JsonNode.Parse(cached)!;
-            foreach (var origin in site ? new[] { "https://api.truyendex.cc" } : Origins)
+            var origins = site ? SiteOrigins : Origins;
+            foreach (var origin in origins)
             {
                 try
                 {
-                    using var response = await http.GetAsync(origin + path);
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(7));
+                    using var response = await http.GetAsync(origin + path, cts.Token);
                     if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                         throw new UpstreamException("Không tìm thấy truyện hoặc chương ở nguồn.", 404);
                     if (!response.IsSuccessStatusCode) continue;
-                    var json = await response.Content.ReadAsStringAsync();
+                    var json = await response.Content.ReadAsStringAsync(cts.Token);
                     var node = JsonNode.Parse(json) ?? throw new JsonException();
                     var expiry = path.Contains("/homepage") ? TimeSpan.FromMinutes(15)
                         : path.Contains("/manga/tag") ? TimeSpan.FromHours(2)
@@ -95,7 +98,8 @@ public class Catalog(HttpClient http, IMemoryCache cache, IConnectionMultiplexer
                     await CacheSet(key, json, expiry);
                     return node;
                 }
-                catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { }
+                catch (UpstreamException) { throw; }
+                catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException or JsonException) { }
             }
             throw new UpstreamException("Nguồn truyện đang tạm thời không phản hồi. Vui lòng thử lại sau.");
         }
@@ -138,24 +142,41 @@ public class Catalog(HttpClient http, IMemoryCache cache, IConnectionMultiplexer
         if (cachedPage != null) return cachedPage;
 
         size = 28;
-        var home = await Get($"/api/series/homepage?page={page}&limit={size}", true);
-        var rows = home["data"]!.AsArray();
-        if (rows.Count == 0) return new([], (int?)home["total"] ?? 0, page, size);
-        var ids = rows.Select(x => S(x?["uuid"])).ToArray();
-        var response = await Get("/manga?limit=100&includes[]=cover_art&includes[]=author&" + string.Join("&", ids.Select(x => "ids[]=" + x)));
-        var map = response["data"]!.AsArray().Select(x => Map(x!, isThumbnail: true)).ToDictionary(x => x.Id.ToString());
-        var items = new List<MangaCard>();
-        foreach (var row in rows) {
-            if (!map.TryGetValue(S(row?["uuid"]), out var m)) continue;
-            // Preserve homepage order: last chapter update descending, not manga metadata update.
-            m.UpdatedAt = Date(row?["last_chapter_updated_at"]);
-            m.Chapters = row?["chapters"]?.AsArray().Select(c => new ChapterCard(Guid.Parse(S(c?["uuid"])), m.Id, S(c?["title"]), 0, "vi", Date(c?["md_updated_at"]))).ToList() ?? [];
-            items.Add(m);
+        try
+        {
+            var home = await Get($"/api/series/homepage?page={page}&limit={size}", true);
+            var rows = home["data"]?.AsArray();
+            if (rows != null && rows.Count > 0)
+            {
+                var ids = rows.Select(x => S(x?["uuid"])).Where(x => !string.IsNullOrEmpty(x)).ToArray();
+                var response = await Get("/manga?limit=100&includes[]=cover_art&includes[]=author&" + string.Join("&", ids.Select(x => "ids[]=" + x)));
+                var map = response["data"]!.AsArray().Select(x => Map(x!, isThumbnail: true)).ToDictionary(x => x.Id.ToString());
+                var items = new List<MangaCard>();
+                foreach (var row in rows) {
+                    if (!map.TryGetValue(S(row?["uuid"]), out var m)) continue;
+                    // Preserve homepage order: last chapter update descending, not manga metadata update.
+                    m.UpdatedAt = Date(row?["last_chapter_updated_at"]);
+                    m.Chapters = row?["chapters"]?.AsArray().Select(c => new ChapterCard(Guid.Parse(S(c?["uuid"])), m.Id, S(c?["title"]), 0, "vi", Date(c?["md_updated_at"]))).ToList() ?? [];
+                    items.Add(m);
+                }
+                await Stats(items);
+                var result = new CatalogPage(items, (int?)home["total"] ?? items.Count, page, size);
+                await CacheSet(cacheKey, result, TimeSpan.FromMinutes(10));
+                return result;
+            }
         }
-        await Stats(items);
-        var result = new CatalogPage(items, (int?)home["total"] ?? items.Count, page, size);
-        await CacheSet(cacheKey, result, TimeSpan.FromMinutes(10));
-        return result;
+        catch (Exception)
+        {
+            // Fallback to MangaDex latest uploaded chapters feed if TruyenDex custom homepage endpoint is temporarily unavailable
+            var fallback = await Search(page, size, null, null, null, null, null, "vi", "latest", null);
+            if (fallback.Items.Count > 0)
+            {
+                await CacheSet(cacheKey, fallback, TimeSpan.FromMinutes(3));
+                return fallback;
+            }
+            throw;
+        }
+        return new([], 0, page, size);
     }
     public async Task<CatalogPage> Search(int page, int size, string? q, string? genre, string? status, string? country, string? demographic, string? language, string? sort, int? year)
     {

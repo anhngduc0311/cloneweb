@@ -11,7 +11,7 @@ pwsh -NoProfile -File scripts/setup.ps1
 docker compose up -d --build
 ```
 
-- Website: http://localhost:4200/nettrom
+- Website: http://localhost:4200
 - API health: http://localhost:5080/api/health
 - PostgreSQL: `localhost:54329`, database/user: `truyendex`.
 - Mật khẩu DB, khóa JWT và tài khoản quản trị được sinh ngẫu nhiên trong `.env`, không đưa vào Git. Không cần tài khoản quản trị để đọc truyện; đăng ký người đọc trực tiếp ở `/dang-ky`.

@@ -15,7 +15,7 @@ export class Search {
  api=inject(Api);store=inject(Store);router=inject(Router);route=inject(ActivatedRoute);tags=signal<{id:string;name:string}[]>([]);items=signal<Manga[]>([]);total=signal(0);page=signal(1);loading=signal(true);error=signal('');expanded=true;epoch=0;
  defaults=()=>({q:'',genre:'',status:'',country:'',demographic:'',language:this.store.settings().language,year:'',sort:'latest'});form=this.defaults();
  constructor(){void this.api.request<{id:string;name:string}[]>('/catalog/tags').then(r=>this.tags.set(r)).catch(()=>{});this.route.queryParamMap.subscribe(p=>{this.form=this.defaults();for(const key of Object.keys(this.form) as (keyof typeof this.form)[]){if(p.has(key))this.form[key]=p.get(key)!;}this.page.set(Math.max(1,Number(p.get('page'))||1));void this.load();});}
- submit(){void this.router.navigate(['/nettrom/tim-truyen-nang-cao'],{queryParams:{...this.form,page:1}});}
+ submit(){void this.router.navigate(['/tim-truyen-nang-cao'],{queryParams:{...this.form,page:1}});}
  reset(){this.form=this.defaults();this.submit();}
  goPage=(page:number)=>{void this.router.navigate([],{relativeTo:this.route,queryParams:{...this.form,page}});window.scrollTo({top:0,behavior:'smooth'});};
  async load(){const n=++this.epoch;this.loading.set(true);this.error.set('');try{const r=await this.api.request<Page<Manga>>('/catalog/search?'+this.api.query({...this.form,page:this.page(),pageSize:24}));if(n===this.epoch){this.items.set(r.items);this.total.set(r.total);}}catch(e){if(n===this.epoch)this.error.set(message(e));}finally{if(n===this.epoch)this.loading.set(false);}}
