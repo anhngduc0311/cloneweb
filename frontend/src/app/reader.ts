@@ -5,25 +5,6 @@ import { Api, Store, Reader as ReaderData, message, proxyImage } from './core';
 import { Icon } from './ui';
 
 @Component({selector:'app-reader',imports:[FormsModule,RouterLink,Icon],template:`
-@if(loading()){
-  <div class="reader-loading-wrap">
-    <div class="reader-loading-card">
-      <div class="reader-spinner"></div>
-      <h3>Đang tải chương truyện…</h3>
-      <p>Đang chuẩn bị hình ảnh chất lượng cao và kết nối máy chủ</p>
-    </div>
-    <div class="reader-skeleton-pages" [style.max-width.px]="store.settings().width">
-      @for(s of [1,2,3];track s){
-        <div class="reader-page-skeleton shimmer">
-          <div class="skeleton-content">
-            <app-icon name="book"/>
-            <span>Đang chuẩn bị trang {{s}}…</span>
-          </div>
-        </div>
-      }
-    </div>
-  </div>
-}
 @if(error()){<div class="error-state"><app-icon name="info"/><h2>Chưa thể mở chương</h2><p>{{error()}}</p><button class="primary" (click)="load()">Thử lại</button><a routerLink="/nettrom">Về trang chủ</a></div>}
 @if(data();as r){
 <div class="reader-heading"><div class="breadcrumb"><a routerLink="/nettrom">Trang chủ</a><span>›</span><a [routerLink]="['/nettrom/truyen-tranh',r.manga.id]">{{r.manga.title}}</a></div><h1>{{r.manga.title}} <span>— {{r.chapter.title}}</span></h1><p>{{r.chapter.group}} · {{pages().length}} trang · {{r.chapter.language==='vi'?'Tiếng Việt':'Tiếng Anh'}}</p></div>
@@ -33,15 +14,7 @@ import { Icon } from './ui';
 @if(r.externalUrl){<div class="empty-state"><p>Chương này được phát hành trên trang của nhóm dịch.</p><a class="primary" [href]="r.externalUrl" target="_blank" rel="noopener noreferrer">Đọc tại nguồn ↗</a></div>}
 <div class="reader-pages" [style.max-width.px]="store.settings().width">
 @for(url of pages();track url;let i=$index){
-  <div class="reader-page" [class.is-loading]="!isLoaded(i) && !failed().has(i)">
-    @if(!isLoaded(i) && !failed().has(i)){
-      <div class="reader-page-skeleton shimmer">
-        <div class="skeleton-content">
-          <div class="mini-spin"></div>
-          <span>Đang tải trang {{i+1}} / {{pages().length}}…</span>
-        </div>
-      </div>
-    }
+  <div class="reader-page">
     @if(failed().has(i)){
       <div class="image-error">
         <p>Không tải được trang {{i+1}} từ máy chủ ảnh.</p>
@@ -55,8 +28,7 @@ import { Icon } from './ui';
            [attr.fetchpriority]="i===0?'high':'auto'"
            referrerpolicy="no-referrer" 
            (load)="onLoaded(i)"
-           (error)="imageError(i)"
-           [class.loaded]="isLoaded(i)">
+           (error)="imageError(i)">
     }
   </div>
 }

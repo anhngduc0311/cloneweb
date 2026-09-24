@@ -14,23 +14,64 @@ services:
       interval: 5s
       timeout: 5s
       retries: 15
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-truyendex_redis_secret}"]
+    ports:
+      - "127.0.0.1:63799:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-truyendex_redis_secret}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.12
+    environment:
+      MEILI_ENV: development
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-truyendex_meili_master_key_secret}
+      MEILI_NO_ANALYTICS: "true"
+    ports:
+      - "127.0.0.1:7709:7700"
+    volumes:
+      - meilisearch_data:/meili_data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:7700/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
   api:
     build: ./backend/TruyenDex.Api
     environment:
       ASPNETCORE_URLS: http://+:5080
       ConnectionStrings__Database: Host=db;Database=truyendex;Username=truyendex;Password=${POSTGRES_PASSWORD}
+      ConnectionStrings__Redis: redis:6379,password=${REDIS_PASSWORD:-truyendex_redis_secret},abortConnect=false
+      Meilisearch__Url: http://meilisearch:7700
+      Meilisearch__ApiKey: ${MEILI_MASTER_KEY:-truyendex_meili_master_key_secret}
       Jwt__Key: ${JWT_KEY:?Run scripts/setup.ps1 first}
       Seed__AdminEmail: ${ADMIN_EMAIL:-admin@truyendex.local}
       Seed__AdminPassword: ${ADMIN_PASSWORD:?Run scripts/setup.ps1 first}
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
     ports:
       - "127.0.0.1:5080:5080"
+
   web:
     build: ./frontend
     depends_on: [api]
     ports:
       - "127.0.0.1:4200:80"
+
 volumes:
   postgres_data:
+  redis_data:
+  meilisearch_data:

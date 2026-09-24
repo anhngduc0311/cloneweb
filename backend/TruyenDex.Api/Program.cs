@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using StackExchange.Redis;
+using Meilisearch;
 using TruyenDex.Api;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -14,6 +16,25 @@ var key = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationExceptio
 if (key.Length < 32) throw new InvalidOperationException("Jwt key must be at least 32 characters.");
 builder.Services.AddDbContext<AppDb>(o => o.UseNpgsql(builder.Configuration.GetConnectionString("Database")));
 builder.Services.AddMemoryCache(o => o.SizeLimit = 1000);
+
+// Redis registration
+var redisConn = builder.Configuration.GetConnectionString("Redis");
+if (!string.IsNullOrWhiteSpace(redisConn)) {
+    try {
+        var muxer = ConnectionMultiplexer.Connect(redisConn);
+        builder.Services.AddSingleton<IConnectionMultiplexer>(muxer);
+    } catch (Exception ex) {
+        Console.WriteLine($"[WARN] Could not connect to Redis at {redisConn}: {ex.Message}");
+    }
+}
+
+// Meilisearch registration
+var meiliUrl = builder.Configuration["Meilisearch:Url"];
+var meiliKey = builder.Configuration["Meilisearch:ApiKey"];
+if (!string.IsNullOrWhiteSpace(meiliUrl)) {
+    builder.Services.AddSingleton(new MeilisearchClient(meiliUrl, meiliKey));
+}
+
 builder.Services.AddHttpClient<Catalog>(c => { c.Timeout = TimeSpan.FromSeconds(15); c.DefaultRequestHeaders.UserAgent.ParseAdd("TruyenDexClone/1.0"); });
 builder.Services.AddScoped<PasswordHasher<AppUser>>();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(o => o.TokenValidationParameters = new() {
@@ -47,14 +68,43 @@ object Session(AppUser u) {
         expires: DateTime.UtcNow.AddDays(7), signingCredentials: new(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)), SecurityAlgorithms.HmacSha256));
     return new { token = new JwtSecurityTokenHandler().WriteToken(jwt), user = new { u.Id, u.Name, u.Email, u.Role } };
 }
-async Task Remember(AppDb db, MangaCard m) {
+async Task Remember(AppDb db, MangaCard m, MeilisearchClient? meili = null) {
     await db.Database.ExecuteSqlInterpolatedAsync($"""
         INSERT INTO "Mangas" ("Id","Title","AlternativeTitle","Author","Cover","Description","Genres","Status","Country","Demographic","Year","Featured","IsDemo","Views","UpdatedAt")
         VALUES ({m.Id},{m.Title},{m.AlternativeTitle},{m.Author},{m.Cover},{m.Description},{m.Genres},{m.Status},{m.Country},{m.Demographic},{m.Year ?? 0},false,false,0,{m.UpdatedAt})
         ON CONFLICT ("Id") DO UPDATE SET "Title"=EXCLUDED."Title", "Cover"=EXCLUDED."Cover", "UpdatedAt"=EXCLUDED."UpdatedAt"
         """);
+    if (meili != null) {
+        _ = Task.Run(async () => {
+            try {
+                var index = meili.Index("mangas");
+                await index.AddDocumentsAsync(new[] { m });
+            } catch { }
+        });
+    }
 }
-app.MapGet("/api/health", async (AppDb db) => await db.Database.CanConnectAsync() ? Results.Ok(new { status = "healthy", database = "PostgreSQL", source = "TruyenDex / MangaDex" }) : Results.StatusCode(503));
+app.MapGet("/api/health", async (AppDb db, IServiceProvider sp) => {
+    var dbOk = await db.Database.CanConnectAsync();
+    var redis = sp.GetService<IConnectionMultiplexer>();
+    var redisOk = redis != null && redis.IsConnected;
+    var meili = sp.GetService<MeilisearchClient>();
+    var meiliOk = false;
+    if (meili != null) {
+        try { meiliOk = await meili.IsHealthyAsync(); } catch { }
+    }
+    return Results.Ok(new {
+        status = dbOk ? "healthy" : "degraded",
+        database = dbOk ? "connected" : "disconnected",
+        redis = redisOk ? "connected" : "disabled/unreachable",
+        meilisearch = meiliOk ? "connected" : "disabled/unreachable",
+        ports = new {
+            redis = 63799,
+            meilisearch = 7709,
+            postgres = 54329
+        },
+        source = "TruyenDex / MangaDex"
+    });
+});
 app.MapPost("/api/auth/register", async (RegisterRequest req, AppDb db, PasswordHasher<AppUser> hasher) => {
     var email = (req.Email ?? "").Trim().ToLowerInvariant(); var name = (req.Name ?? "").Trim();
     if (email.Length > 254 || !System.Net.Mail.MailAddress.TryCreate(email, out var parsed) || parsed.Address != email || name.Length is < 2 or > 60 || (req.Password?.Length ?? 0) is < 10 or > 128)

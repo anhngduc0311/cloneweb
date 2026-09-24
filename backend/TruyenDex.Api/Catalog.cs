@@ -2,6 +2,8 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Caching.Memory;
+using StackExchange.Redis;
+using Meilisearch;
 
 namespace TruyenDex.Api;
 
@@ -31,7 +33,7 @@ public record ReaderData(ChapterCard Chapter, MangaCard Manga, string[] Pages, s
 public class UpstreamException(string message, int status = 502) : Exception(message) { public int Status { get; } = status; }
 
 // Read-only adapter. Only fixed upstream origins and validated IDs are used.
-public class Catalog(HttpClient http, IMemoryCache cache)
+public class Catalog(HttpClient http, IMemoryCache cache, IConnectionMultiplexer? redis = null, MeilisearchClient? meili = null)
 {
     private static readonly SemaphoreSlim Gate = new(1, 1);
     private static readonly string[] Origins = ["https://api-proxy.truyendex.cc/mangadex", "https://api-proxy.truyendex.xyz/mangadex", "https://api.mangadex.org"];
@@ -39,14 +41,42 @@ public class Catalog(HttpClient http, IMemoryCache cache)
     private static string E(string s) => Uri.EscapeDataString(s);
     private static DateTime Date(JsonNode? n) => DateTime.TryParse(S(n), out var d) ? d.ToUniversalTime() : DateTime.UtcNow;
     private static string Localized(JsonNode? n) => S(n?["vi"] ?? n?["en"] ?? (n as JsonObject)?.FirstOrDefault().Value);
+
+    private async Task<T?> CacheGet<T>(string key) where T : class
+    {
+        if (redis != null && redis.IsConnected)
+        {
+            try {
+                var v = await redis.GetDatabase().StringGetAsync(key);
+                if (v.HasValue)
+                    return typeof(T) == typeof(string) ? (T)(object)v.ToString() : JsonSerializer.Deserialize<T>(v.ToString());
+            } catch { }
+        }
+        return cache.TryGetValue<T>(key, out var cached) ? cached : null;
+    }
+
+    private async Task CacheSet<T>(string key, T value, TimeSpan expiry) where T : class
+    {
+        if (redis != null && redis.IsConnected)
+        {
+            try {
+                var json = typeof(T) == typeof(string) ? (string)(object)value : JsonSerializer.Serialize(value);
+                await redis.GetDatabase().StringSetAsync(key, json, expiry);
+            } catch { }
+        }
+        cache.Set(key, value, new MemoryCacheEntryOptions { AbsoluteExpirationRelativeToNow = expiry, Size = 1 });
+    }
+
     public async Task<JsonNode> Get(string path, bool site = false)
     {
         var key = $"upstream:{site}:{path}";
-        if (cache.TryGetValue<string>(key, out var cached)) return JsonNode.Parse(cached!)!;
+        var cached = await CacheGet<string>(key);
+        if (cached != null) return JsonNode.Parse(cached)!;
         await Gate.WaitAsync();
         try
         {
-            if (cache.TryGetValue<string>(key, out cached)) return JsonNode.Parse(cached!)!;
+            cached = await CacheGet<string>(key);
+            if (cached != null) return JsonNode.Parse(cached)!;
             foreach (var origin in site ? new[] { "https://api.truyendex.cc" } : Origins)
             {
                 try
@@ -62,7 +92,7 @@ public class Catalog(HttpClient http, IMemoryCache cache)
                         : path.Contains("/aggregate") ? TimeSpan.FromMinutes(30)
                         : path.Contains("/statistics/") ? TimeSpan.FromMinutes(15)
                         : TimeSpan.FromMinutes(10);
-                    cache.Set(key, json, new MemoryCacheEntryOptions { AbsoluteExpirationRelativeToNow = expiry, Size = 1 });
+                    await CacheSet(key, json, expiry);
                     return node;
                 }
                 catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { }
@@ -104,8 +134,8 @@ public class Catalog(HttpClient http, IMemoryCache cache)
     public async Task<CatalogPage> Home(int page, int size)
     {
         var cacheKey = $"catalog:home:{page}:{size}";
-        if (cache.TryGetValue<CatalogPage>(cacheKey, out var cachedPage) && cachedPage != null)
-            return cachedPage;
+        var cachedPage = await CacheGet<CatalogPage>(cacheKey);
+        if (cachedPage != null) return cachedPage;
 
         size = 28;
         var home = await Get($"/api/series/homepage?page={page}&limit={size}", true);
@@ -124,14 +154,29 @@ public class Catalog(HttpClient http, IMemoryCache cache)
         }
         await Stats(items);
         var result = new CatalogPage(items, (int?)home["total"] ?? items.Count, page, size);
-        cache.Set(cacheKey, result, new MemoryCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10), Size = 1 });
+        await CacheSet(cacheKey, result, TimeSpan.FromMinutes(10));
         return result;
     }
     public async Task<CatalogPage> Search(int page, int size, string? q, string? genre, string? status, string? country, string? demographic, string? language, string? sort, int? year)
     {
         var cacheKey = $"catalog:search:{page}:{size}:{q}:{genre}:{status}:{country}:{demographic}:{language}:{sort}:{year}";
-        if (cache.TryGetValue<CatalogPage>(cacheKey, out var cachedSearch) && cachedSearch != null)
-            return cachedSearch;
+        var cachedSearch = await CacheGet<CatalogPage>(cacheKey);
+        if (cachedSearch != null) return cachedSearch;
+
+        if (!string.IsNullOrWhiteSpace(q) && meili != null)
+        {
+            try {
+                var index = meili.Index("mangas");
+                var meiliHits = await index.SearchAsync<MangaCard>(q.Trim(), new SearchQuery { Limit = size, Offset = (page - 1) * size });
+                if (meiliHits?.Hits?.Any() == true)
+                {
+                    var total = (meiliHits as SearchResult<MangaCard>)?.EstimatedTotalHits ?? meiliHits.Hits.Count;
+                    var resHits = new CatalogPage(meiliHits.Hits.ToList(), total, page, size);
+                    await CacheSet(cacheKey, resHits, TimeSpan.FromMinutes(5));
+                    return resHits;
+                }
+            } catch { }
+        }
 
         var order = sort switch { "rating" => "rating", "hot" => "followedCount", "title" => "title", "new" => "createdAt", _ => "latestUploadedChapter" };
         var path = $"/manga?limit={size}&offset={(page - 1) * size}&includes[]=cover_art&includes[]=author&contentRating[]=safe&contentRating[]=suggestive&order[{order}]={(order == "title" ? "asc" : "desc")}";
@@ -146,19 +191,30 @@ public class Catalog(HttpClient http, IMemoryCache cache)
         var items = result["data"]!.AsArray().Select(x => Map(x!, isThumbnail: true)).ToList();
         await Stats(items);
         var res = new CatalogPage(items, Math.Min((int?)result["total"] ?? 0, 10000), page, size);
-        cache.Set(cacheKey, res, new MemoryCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5), Size = 1 });
+        await CacheSet(cacheKey, res, TimeSpan.FromMinutes(5));
+
+        if (meili != null && items.Count > 0)
+        {
+            _ = Task.Run(async () => {
+                try {
+                    var index = meili.Index("mangas");
+                    await index.AddDocumentsAsync(items);
+                } catch { }
+            });
+        }
+
         return res;
     }
     public async Task<MangaCard> Detail(Guid id)
     {
         var cacheKey = $"catalog:detail:{id}";
-        if (cache.TryGetValue<MangaCard>(cacheKey, out var cachedManga) && cachedManga != null)
-            return cachedManga;
+        var cachedManga = await CacheGet<MangaCard>(cacheKey);
+        if (cachedManga != null) return cachedManga;
 
         var data = await Get($"/manga/{id}?includes[]=cover_art&includes[]=author");
         var m = Map(data["data"]!, isThumbnail: false);
         await Stats([m]);
-        cache.Set(cacheKey, m, new MemoryCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10), Size = 1 });
+        await CacheSet(cacheKey, m, TimeSpan.FromMinutes(10));
         return m;
     }
     private ChapterCard MapChapter(JsonNode c)
@@ -175,20 +231,20 @@ public class Catalog(HttpClient http, IMemoryCache cache)
     public async Task<ChapterPage> Chapters(Guid id, string language, int page, bool ascending = false)
     {
         var cacheKey = $"catalog:chapters:{id}:{language}:{page}:{ascending}";
-        if (cache.TryGetValue<ChapterPage>(cacheKey, out var cachedChapters) && cachedChapters != null)
-            return cachedChapters;
+        var cachedChapters = await CacheGet<ChapterPage>(cacheKey);
+        if (cachedChapters != null) return cachedChapters;
 
         const int size = 100;
         var r = await Get($"/manga/{id}/feed?limit={size}&offset={(page - 1) * size}&translatedLanguage[]={E(language == "en" ? "en" : "vi")}&includes[]=scanlation_group&order[chapter]={(ascending ? "asc" : "desc")}&includeExternalUrl=0");
         var result = new ChapterPage(r["data"]!.AsArray().Select(x => MapChapter(x!)).ToList(), Math.Min((int?)r["total"] ?? 0, 10000), page, size);
-        cache.Set(cacheKey, result, new MemoryCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5), Size = 1 });
+        await CacheSet(cacheKey, result, TimeSpan.FromMinutes(5));
         return result;
     }
     public async Task<ReaderData> Read(Guid id)
     {
         var cacheKey = $"catalog:reader:{id}";
-        if (cache.TryGetValue<ReaderData>(cacheKey, out var cachedReader) && cachedReader != null)
-            return cachedReader;
+        var cachedReader = await CacheGet<ReaderData>(cacheKey);
+        if (cachedReader != null) return cachedReader;
 
         var chapter = (await Get($"/chapter/{id}?includes[]=scanlation_group"))["data"]!;
         var c = MapChapter(chapter);
@@ -216,7 +272,7 @@ public class Catalog(HttpClient http, IMemoryCache cache)
         string ProxyUrl(string url) => "https://services.f-ck.me/v1/image/" + Convert.ToBase64String(Encoding.UTF8.GetBytes(url)).Replace('+', '-').Replace('/', '_');
         string[] Pages(string key, string folder) => r["chapter"]?[key]?.AsArray().Select(x => ProxyUrl($"{baseUrl}/{folder}/{hash}/{E(S(x))}")).ToArray() ?? [];
         var result = new ReaderData(c, m, Pages("data", "data"), Pages("dataSaver", "data-saver"), null, navigation);
-        cache.Set(cacheKey, result, new MemoryCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(20), Size = 1 });
+        await CacheSet(cacheKey, result, TimeSpan.FromMinutes(20));
         return result;
     }
     public async Task<object> Tags() => (await Get("/manga/tag"))["data"]!.AsArray().Select(x => new { id = S(x?["id"]), name = Localized(x?["attributes"]?["name"]) }).OrderBy(x => x.name).ToArray();
