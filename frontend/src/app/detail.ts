@@ -40,14 +40,14 @@ import { Sidebar } from './sidebar';
 
           <div class="detail-info">
             <h1 class="detail-title">{{m.title}}</h1>
-            @if(m.alternativeTitle){
+            @if(m.alternativeTitle && m.alternativeTitle.trim().toLowerCase() !== m.title.trim().toLowerCase()){
               <p class="alternative">{{m.alternativeTitle}}</p>
             }
 
             <div class="detail-stats">
-              <span class="stat-pill star"><app-icon name="star"/> {{m.rating.toFixed(1)}} / 10</span>
-              <span class="stat-pill heart"><app-icon name="heart"/> {{compact(m.follows)}} theo dõi</span>
-              <span class="stat-pill comment"><app-icon name="comment"/> {{commentsTotal()}} bình luận</span>
+              <span class="stat-pill star"><app-icon name="star"/> {{m.rating.toFixed(1)}}</span>
+              <span class="stat-pill heart"><app-icon name="heart"/> {{compact(m.follows)}}</span>
+              <span class="stat-pill comment"><app-icon name="comment"/> {{commentsTotal()}}</span>
             </div>
 
             <!-- Primary CTAs on Mobile / Desktop -->
