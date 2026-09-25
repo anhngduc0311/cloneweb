@@ -8,7 +8,7 @@
 
       <!-- Brand Logo -->
       <a class="brand" routerLink="/" aria-label="AkaTruyen - Trang chủ">
-        <span class="brand-mark">A</span>Aka<span>Truyen</span>
+        <img class="brand-symbol" src="/brand-mark.svg" width="44" height="44" alt="" aria-hidden="true"><span class="brand-wordmark">aka<span>truyen</span><span class="brand-period">.</span></span>
       </a>
 
       <!-- Desktop / Tablet Search Wrap -->
@@ -230,8 +230,8 @@
       <aside class="mobile-drawer glass-panel" (click)="$event.stopPropagation()">
         <!-- Drawer Header -->
         <div class="drawer-header">
-          <a class="brand" routerLink="/" (click)="menu.set(false)">
-            <span class="brand-mark">A</span>Aka<span>Truyen</span>
+          <a class="brand" routerLink="/" aria-label="AkaTruyen - Trang chủ" (click)="menu.set(false)">
+            <img class="brand-symbol" src="/brand-mark.svg" width="44" height="44" alt="" aria-hidden="true"><span class="brand-wordmark">aka<span>truyen</span><span class="brand-period">.</span></span>
           </a>
           <button class="icon-button btn-close-drawer" aria-label="Đóng menu" (click)="menu.set(false)">
             <app-icon name="close"/>
@@ -334,25 +334,14 @@
 
 <div class="site-container" [class.reader-container]="reader()">
   @if(!reader()){
-    <div class="site-notice glass-panel">
-      <div class="notice-badge">MỚI</div>
-      <span class="notice-text">AkaTruyen · Đọc truyện tranh online tốc độ cao, giao diện tối ưu cho mọi thiết bị di động.</span>
-      <span class="live-dot" title="Hệ thống hoạt động ổn định"></span>
-    </div>
-
-    <!-- Desktop Main Navigation Bar -->
     <nav class="main-nav desktop-nav-bar" aria-label="Điều hướng chính">
       <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact:true}"><app-icon name="home"/> Trang chủ</a>
+      <a routerLink="/tim-truyen-nang-cao" routerLinkActive="active"><app-icon name="compass"/> Khám phá</a>
+      <button class="genre-nav-btn" [class.active]="genresOpen()" [attr.aria-expanded]="genresOpen()" (click)="genres()"><app-icon name="tag"/> Thể loại <app-icon name="chevronDown"/></button>
+      <span class="nav-divider" aria-hidden="true"></span>
       <a routerLink="/theo-doi" routerLinkActive="active"><app-icon name="heart"/> Theo dõi</a>
-      <a routerLink="/tim-truyen-nang-cao" [queryParams]="{sort:'hot'}"><app-icon name="fire"/> Hot Manhwa</a>
-      <a routerLink="/tim-truyen-nang-cao" [queryParams]="{sort:'rating'}"><app-icon name="star"/> Yêu thích</a>
-      <a routerLink="/" [queryParams]="{page:1}"><app-icon name="clock"/> Mới cập nhật</a>
-      <a routerLink="/lich-su" routerLinkActive="active"><app-icon name="bookmark"/> Lịch sử</a>
-      <button class="genre-nav-btn" [class.active]="genresOpen()" (click)="genres()"><app-icon name="tag"/> Thể loại ⌄</button>
-      <a routerLink="/tim-truyen-nang-cao"><app-icon name="compass"/> Tìm truyện</a>
-      <a routerLink="/tim-truyen-nang-cao" [queryParams]="{demographic:'shoujo'}">Con gái</a>
-      <a routerLink="/tim-truyen-nang-cao" [queryParams]="{demographic:'shounen'}">Con trai</a>
-      <a href="https://docln.sbs" target="_blank" rel="noopener noreferrer">Light Novel ↗</a>
+      <a routerLink="/lich-su" routerLinkActive="active"><app-icon name="clock"/> Lịch sử đọc</a>
+      <a class="nav-ranking" routerLink="/tim-truyen-nang-cao" [queryParams]="{sort:'rating'}"><app-icon name="trophy"/> Xếp hạng</a>
     </nav>
 
     @if(genresOpen()){
@@ -380,7 +369,7 @@
   <footer class="site-footer">
     <div class="footer-inner">
       <div>
-        <a class="brand" routerLink="/"><span class="brand-mark">A</span>Aka<span>Truyen</span></a>
+        <a class="brand" routerLink="/" aria-label="AkaTruyen - Trang chủ"><img class="brand-symbol" src="/brand-mark.svg" width="44" height="44" alt="" aria-hidden="true"><span class="brand-wordmark">aka<span>truyen</span><span class="brand-period">.</span></span></a>
         <p>Thế giới truyện tranh không giới hạn. Tối ưu trải nghiệm đọc mượt mà trên điện thoại và máy tính.</p>
         <small class="footer-copy">© AkaTruyen · Nền tảng đọc truyện online</small>
       </div>

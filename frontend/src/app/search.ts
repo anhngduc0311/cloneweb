@@ -18,14 +18,15 @@ import { Icon, MangaCardComponent, Pagination } from './ui';
     <div class="filter-title-row">
       <div class="search-input-field">
         <app-icon name="search" class="field-icon"/>
-        <input type="search" name="q" [(ngModel)]="form.q" placeholder="Nhập tên truyện, tác giả muốn tìm…" autocomplete="off">
+        <input type="search" name="q" [(ngModel)]="form.q" placeholder="Tên truyện, tác giả…" aria-label="Tìm theo tên truyện hoặc tác giả" autocomplete="off">
         @if(form.q){
-          <button type="button" class="btn-clear-input" (click)="form.q=''">×</button>
+          <button type="button" class="btn-clear-input" aria-label="Xóa từ khóa" (click)="form.q=''">×</button>
         }
       </div>
-      <button class="secondary btn-toggle-filter" type="button" (click)="expanded = !expanded">
+      <button class="secondary btn-toggle-filter" type="button" [attr.aria-expanded]="expanded" [attr.aria-label]="expanded ? 'Thu gọn bộ lọc' : 'Mở rộng bộ lọc'" (click)="expanded = !expanded">
         <app-icon name="filter"/> 
-        <span>{{expanded ? 'Thu gọn bộ lọc' : 'Mở rộng bộ lọc'}}</span>
+        <span>Bộ lọc</span>
+        <app-icon name="chevronDown" class="filter-chevron" [style.transform]="expanded ? 'rotate(180deg)' : 'none'"/>
       </button>
     </div>
 

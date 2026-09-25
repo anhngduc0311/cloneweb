@@ -61,17 +61,17 @@ export class Icon {
      (touchstart)="prefetch()" 
      [attr.aria-label]="manga().title">
     <img [src]="manga().cover" [alt]="manga().title" loading="lazy" decoding="async" referrerpolicy="no-referrer" (load)="loaded.set(true)" [class.loaded]="loaded()" (error)="fallback($event)">
-    <div class="cover-caption">
-      <h3 [title]="manga().title">{{manga().title}}</h3>
-      <div class="card-stats">
-        <span><app-icon name="star"/> {{manga().rating.toFixed(1)}}</span>
-        <span><app-icon name="heart"/> {{compact(manga().follows)}}</span>
-      </div>
-    </div>
     @if(manga().contentRating === 'erotica' || manga().contentRating === 'pornographic'){
       <span class="age-label">18+</span>
     }
   </a>
+  <div class="manga-card-info">
+    <div class="card-stats">
+      <span><app-icon name="star"/> {{manga().rating.toFixed(1)}}</span>
+      <span><app-icon name="heart"/> {{compact(manga().follows)}}</span>
+    </div>
+    <h3><a [routerLink]="['/truyen-tranh', manga().id]" [title]="manga().title">{{manga().title}}</a></h3>
+  </div>
   <div class="mini-chapters">
     @for(c of manga().chapters.slice(0, 3); track c.id){
       <div class="mini-chap-item">

@@ -8,12 +8,20 @@ import { Sidebar } from './sidebar';
   selector: 'app-home',
   imports: [RouterLink, Icon, MangaCardComponent, Pagination, Sidebar],
   template: `
+<section class="discovery-intro">
+  <div>
+    <span class="eyebrow">KHÔNG GIAN DÀNH CHO NGƯỜI MÊ TRUYỆN</span>
+    <h1>Câu chuyện hay.<br><span>Một thế giới mới.</span></h1>
+    <p>Tìm bộ truyện tiếp theo khiến bạn không thể rời mắt.</p>
+  </div>
+  <a class="discover-link" routerLink="/tim-truyen-nang-cao">Khám phá truyện <app-icon name="arrowRight"/></a>
+</section>
 <section class="recommendations">
   <div class="section-title">
-    <h2><app-icon name="fire"/> Truyện Hot Manhwa</h2>
+    <div><span class="eyebrow">ĐÁNG ĐỂ KHÁM PHÁ</span><h2>Truyện nổi bật</h2></div>
     <div class="carousel-controls">
-      <button aria-label="Đề cử trước" (click)="rotate(-1)">‹</button>
-      <button aria-label="Đề cử tiếp" (click)="rotate(1)">›</button>
+      <button aria-label="Đề cử trước" [disabled]="!pool().length" (click)="rotate(-1)">‹</button>
+      <button aria-label="Đề cử tiếp" [disabled]="!pool().length" (click)="rotate(1)">›</button>
     </div>
   </div>
   
@@ -28,9 +36,9 @@ import { Sidebar } from './sidebar';
           decoding="async" 
           referrerpolicy="no-referrer" 
           (load)="$any($event.target).classList.add('loaded')" 
-          (error)="$any($event.target).classList.add('loaded')">
+          (error)="coverFallback($event)">
         <div class="featured-overlay">
-          <span class="featured-badge">HOT #{{i + 1}}</span>
+          <span class="featured-badge"><app-icon name="star"/> {{m.rating.toFixed(1)}}</span>
           <h3>{{m.title}}</h3>
           <p class="featured-sub">
             <app-icon name="book" style="width:12px;height:12px;"/>
@@ -39,18 +47,21 @@ import { Sidebar } from './sidebar';
         </div>
       </a>
     }
-    @if(!featured().length){
+    @if(featuredLoading()){
       @for(i of [1,2,3,4,5]; track i){
         <div class="skeleton featured-card"></div>
       }
     }
   </div>
+  @if(featuredError()){
+    <div class="featured-empty"><span>Đề cử đang tạm gián đoạn.</span><button (click)="loadFeatured()">Tải lại <app-icon name="arrowRight"/></button></div>
+  }
 </section>
 
 <div class="columns">
   <section class="main-content-section">
     <div class="section-title">
-      <h1><app-icon name="clock"/> Truyện Manga Mới Cập Nhật</h1>
+      <div><span class="eyebrow">CHƯƠNG MỚI MỖI NGÀY</span><h2>Mới cập nhật <span class="update-dot"></span></h2></div>
       <a class="filter-shortcut-btn" routerLink="/tim-truyen-nang-cao" aria-label="Lọc truyện nâng cao">
         <app-icon name="filter"/>
         <span class="btn-text">Bộ lọc</span>
@@ -104,6 +115,8 @@ export class Home {
   page = signal(1);
   loading = signal(true);
   error = signal('');
+  featuredLoading = signal(true);
+  featuredError = signal(false);
   skeletons = Array.from({ length: 12 }, (_, i) => i);
   offset = 0;
   epoch = 0;
@@ -117,13 +130,22 @@ export class Home {
   }
 
   async loadFeatured() {
+    this.featuredLoading.set(true);
+    this.featuredError.set(false);
     try {
       const r = await this.api.request<Page<Manga>>('/catalog/featured?limit=20', 'GET', undefined, true);
       if (r.items && r.items.length) {
         this.pool.set(r.items);
         this.rotate(0);
       }
-    } catch { }
+    } catch { this.featuredError.set(true); }
+    finally { this.featuredLoading.set(false); }
+  }
+
+  coverFallback(event: Event) {
+    const image = event.target as HTMLImageElement;
+    if (!image.src.endsWith('/cover-placeholder.svg')) image.src = '/cover-placeholder.svg';
+    image.classList.add('loaded');
   }
 
   rotate(step: number) {
