@@ -84,7 +84,7 @@ import { Sidebar } from './sidebar';
     </div>
 
     @if(!loading() && !error()){
-      <app-pagination [page]="page()" [total]="total()" [size]="28" [change]="goPage"/>
+      <app-pagination [page]="page()" [total]="total()" [size]="28" [change]="goPage" [hover]="prefetchPage"/>
     }
   </section>
 
@@ -133,15 +133,46 @@ export class Home {
     this.featured.set(Array.from({ length: Math.min(6, pool.length) }, (_, i) => pool[(i + this.offset) % pool.length]));
   }
 
+  prefetchPage = (p: number) => {
+    if (p >= 1) {
+      this.api.prefetch('/catalog/home?page=' + p);
+    }
+  };
+
+  prefetchAdjacent() {
+    const p = this.page();
+    const max = Math.ceil(this.total() / 28) || 999;
+    if (p < max) this.prefetchPage(p + 1);
+    if (p > 1) this.prefetchPage(p - 1);
+    if (p + 1 < max) {
+      setTimeout(() => {
+        if (this.page() === p) this.prefetchPage(p + 2);
+      }, 400);
+    }
+  }
+
   async load() {
+    const p = this.page();
+    const path = '/catalog/home?page=' + p;
     const n = ++this.epoch;
-    this.loading.set(true);
     this.error.set('');
+
+    const cached = this.api.getCached<Page<Manga>>(path);
+    if (cached && cached.items) {
+      this.items.set(cached.items);
+      this.total.set(cached.total);
+      this.loading.set(false);
+      this.prefetchAdjacent();
+      return;
+    }
+
+    this.loading.set(true);
     try {
-      const r = await this.api.request<Page<Manga>>('/catalog/home?page=' + this.page(), 'GET', undefined, true);
+      const r = await this.api.request<Page<Manga>>(path, 'GET', undefined, true);
       if (n === this.epoch) {
         this.items.set(r.items);
         this.total.set(r.total);
+        this.prefetchAdjacent();
       }
     } catch (e) {
       if (n === this.epoch) this.error.set(message(e));
@@ -151,7 +182,9 @@ export class Home {
   }
 
   goPage = (page: number) => {
+    this.prefetchPage(page);
     void this.router.navigate(['/'], { queryParams: { page } });
-    window.scrollTo({ top: 350, behavior: 'smooth' });
+    const targetY = typeof window !== 'undefined' && window.innerWidth <= 768 ? 200 : 350;
+    window.scrollTo({ top: targetY, behavior: 'smooth' });
   };
 }

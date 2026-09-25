@@ -41,6 +41,41 @@ export function proxyImage(url: string): string {
 @Injectable({providedIn:'root'})
 export class Api {
   private cache = new Map<string, { data: unknown; expiry: number }>();
+  private preloadedImages = new Set<string>();
+
+  hasCached(path: string): boolean {
+    const hit = this.cache.get(path);
+    return !!hit && hit.expiry > Date.now();
+  }
+
+  getCached<T>(path: string): T | undefined {
+    const hit = this.cache.get(path);
+    if (hit && hit.expiry > Date.now()) {
+      return hit.data as T;
+    }
+    return undefined;
+  }
+
+  preloadImages(urls: string[]): void {
+    if (typeof window === 'undefined') return;
+    for (const u of urls) {
+      if (!u || u === '/cover-placeholder.svg' || this.preloadedImages.has(u)) continue;
+      this.preloadedImages.add(u);
+      const img = new Image();
+      img.referrerPolicy = 'no-referrer';
+      img.src = u;
+    }
+  }
+
+  prefetch(path: string): void {
+    if (this.hasCached(path)) return;
+    void this.request<Page<Manga>>(path, 'GET', undefined, true).then(res => {
+      if (res && res.items && Array.isArray(res.items)) {
+        const topCovers = res.items.slice(0, 6).map(m => m.cover).filter(Boolean);
+        this.preloadImages(topCovers);
+      }
+    }).catch(() => {});
+  }
 
   clearCache(prefix?: string) {
     if (!prefix) this.cache.clear();
@@ -61,7 +96,7 @@ export class Api {
     if(!response.ok){ let info; try{info=await response.json();}catch{} throw new Error(info?.message || (response.status===401?'Vui lòng đăng nhập để tiếp tục.':response.status===429?'Bạn thao tác quá nhanh. Vui lòng thử lại sau một phút.':'Không tải được dữ liệu. Vui lòng thử lại.')); }
     const result = response.status===204?undefined as T:await response.json();
     if (shouldCache) {
-      this.cache.set(path, { data: result, expiry: Date.now() + 5 * 60 * 1000 });
+      this.cache.set(path, { data: result, expiry: Date.now() + 15 * 60 * 1000 });
     }
     return result;
   }

@@ -143,7 +143,7 @@ import { Icon, MangaCardComponent, Pagination } from './ui';
     }
 
     @if(total() > 24){
-      <app-pagination [page]="page()" [total]="total()" [size]="24" [change]="goPage"/>
+      <app-pagination [page]="page()" [total]="total()" [size]="24" [change]="goPage" [hover]="prefetchPage"/>
     }
   }
 </div>`
@@ -196,24 +196,55 @@ export class Search {
     this.submit();
   }
 
+  getPath(p: number) {
+    return '/catalog/search?' + this.api.query({
+      ...this.form,
+      page: p,
+      pageSize: 24
+    });
+  }
+
+  prefetchPage = (p: number) => {
+    if (p >= 1) {
+      this.api.prefetch(this.getPath(p));
+    }
+  };
+
+  prefetchAdjacent() {
+    const p = this.page();
+    const max = Math.ceil(this.total() / 24) || 999;
+    if (p < max) this.prefetchPage(p + 1);
+    if (p > 1) this.prefetchPage(p - 1);
+  }
+
   goPage = (page: number) => {
+    this.prefetchPage(page);
     void this.router.navigate([], { relativeTo: this.route, queryParams: { ...this.form, page } });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   async load() {
+    const p = this.page();
+    const path = this.getPath(p);
     const n = ++this.epoch;
-    this.loading.set(true);
     this.error.set('');
+
+    const cached = this.api.getCached<Page<Manga>>(path);
+    if (cached && cached.items) {
+      this.items.set(cached.items);
+      this.total.set(cached.total);
+      this.loading.set(false);
+      this.prefetchAdjacent();
+      return;
+    }
+
+    this.loading.set(true);
     try {
-      const r = await this.api.request<Page<Manga>>('/catalog/search?' + this.api.query({
-        ...this.form,
-        page: this.page(),
-        pageSize: 24
-      }));
+      const r = await this.api.request<Page<Manga>>(path, 'GET', undefined, true);
       if (n === this.epoch) {
         this.items.set(r.items);
         this.total.set(r.total);
+        this.prefetchAdjacent();
       }
     } catch (e) {
       if (n === this.epoch) this.error.set(message(e));

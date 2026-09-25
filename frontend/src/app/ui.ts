@@ -101,17 +101,35 @@ export class MangaCardComponent {
   imports: [Icon],
   template: `
 <nav class="pagination" aria-label="Phân trang">
-  <button class="pag-btn" [disabled]="page() <= 1" (click)="change()(page() - 1)" aria-label="Trang trước">
+  <button class="pag-btn" 
+          [disabled]="page() <= 1" 
+          (click)="change()(page() - 1)" 
+          (mouseenter)="onHover(page() - 1)" 
+          (touchstart)="onHover(page() - 1)" 
+          aria-label="Trang trước">
     <app-icon name="arrowLeft"/>
   </button>
   @for(p of numbers(); track p){
-    <button class="pag-btn" [class.active]="page() === p" [attr.aria-current]="page() === p ? 'page' : null" (click)="change()(p)">{{p}}</button>
+    <button class="pag-btn" 
+            [class.active]="page() === p" 
+            [attr.aria-current]="page() === p ? 'page' : null" 
+            (click)="change()(p)" 
+            (mouseenter)="onHover(p)" 
+            (touchstart)="onHover(p)">{{p}}</button>
   }
   @if(totalPages() > page() + 2){
     <span class="pag-ellipsis">…</span>
-    <button class="pag-btn" (click)="change()(totalPages())">{{totalPages()}}</button>
+    <button class="pag-btn" 
+            (click)="change()(totalPages())" 
+            (mouseenter)="onHover(totalPages())" 
+            (touchstart)="onHover(totalPages())">{{totalPages()}}</button>
   }
-  <button class="pag-btn" [disabled]="page() >= totalPages()" (click)="change()(page() + 1)" aria-label="Trang tiếp">
+  <button class="pag-btn" 
+          [disabled]="page() >= totalPages()" 
+          (click)="change()(page() + 1)" 
+          (mouseenter)="onHover(page() + 1)" 
+          (touchstart)="onHover(page() + 1)" 
+          aria-label="Trang tiếp">
     <app-icon name="arrowRight"/>
   </button>
 </nav>`
@@ -121,6 +139,14 @@ export class Pagination {
   total = input(0);
   size = input(28);
   change = input.required<(n: number) => void>();
+  hover = input<((n: number) => void) | undefined>();
+
+  onHover(n: number) {
+    const fn = this.hover();
+    if (fn && n >= 1 && n <= this.totalPages() && n !== this.page()) {
+      fn(n);
+    }
+  }
 
   totalPages() {
     return Math.max(1, Math.ceil(this.total() / this.size()));

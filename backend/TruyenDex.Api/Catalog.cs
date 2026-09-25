@@ -104,7 +104,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             }
             throw new UpstreamException("Nguồn truyện đang tạm thời không phản hồi. Vui lòng thử lại sau.");
         }
-        finally { await Task.Delay(200); Gate.Release(); }
+        finally { await Task.Delay(site ? 15 : 60); Gate.Release(); }
     }
 
     private MangaCard Map(JsonNode n, bool isThumbnail = true)
@@ -276,13 +276,17 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         }
     }
 
-    private async Task EnsureTopChapters(List<MangaCard> items, int targetCount = 3)
+    private async Task EnsureTopChapters(List<MangaCard> items, int targetCount = 1)
     {
         if (items.Count == 0) return;
-        var sem = new SemaphoreSlim(8);
-        var tasks = items.Where(m => m.Chapters.Count < targetCount).Select(async m =>
+        var missing = items.Where(m => m.Chapters == null || m.Chapters.Count == 0).Take(4).ToList();
+        if (missing.Count == 0) return;
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        var sem = new SemaphoreSlim(4);
+        var tasks = missing.Select(async m =>
         {
-            await sem.WaitAsync();
+            await sem.WaitAsync(cts.Token);
             try
             {
                 var slug = await truyengg.ResolveSlug(m.Id);
@@ -318,18 +322,33 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             }
         });
 
-        await Task.WhenAll(tasks);
+        try
+        {
+            await Task.WhenAll(tasks);
+        }
+        catch { }
     }
 
     public async Task<CatalogPage> Home(int page, int size)
     {
-        var cacheKey = $"catalog:home:v12:{page}:{size}";
+        var cacheKey = $"catalog:home:v13:{page}:{size}";
         var cachedPage = await CacheGet<CatalogPage>(cacheKey);
         if (cachedPage != null) return cachedPage;
 
         size = 28;
         var mangaDexItems = new List<MangaCard>();
         int total = 0;
+
+        // Kick off TruyenGG fetch in parallel with MangaDex fetch
+        var ggTask = Task.Run(async () =>
+        {
+            try
+            {
+                var raw = await truyengg.GetLatest(page);
+                return raw.Where(m => !IsManhwaOrManhua(m)).ToList();
+            }
+            catch { return new List<MangaCard>(); }
+        });
 
         try
         {
@@ -377,14 +396,8 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             catch { }
         }
 
-        // Fetch latest items from TruyenGGVN (country=4 Manga)
-        List<MangaCard> ggItems = [];
-        try
-        {
-            var rawGg = await truyengg.GetLatest(page);
-            ggItems = rawGg.Where(m => !IsManhwaOrManhua(m)).ToList();
-        }
-        catch { }
+        // Await TruyenGG items
+        var ggItems = await ggTask;
 
         // Deduplication: if title or alternative title matches any existing item, prioritize the one with Chapter 1
         var merged = new List<MangaCard>();
@@ -436,10 +449,10 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
         // Exclude any remaining Manhwa/Manhua items, sort by newest chapter update descending, and take page size
         merged = merged.Where(m => !IsManhwaOrManhua(m)).OrderByDescending(x => x.UpdatedAt).Take(size).ToList();
-        await EnsureTopChapters(merged, 3);
+        await EnsureTopChapters(merged, 1);
 
         var result = new CatalogPage(merged, total + ggItems.Count, page, size);
-        await CacheSet(cacheKey, result, TimeSpan.FromMinutes(5));
+        await CacheSet(cacheKey, result, TimeSpan.FromMinutes(15));
         return result;
     }
 
@@ -649,21 +662,21 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
     public async Task<MangaCard> Detail(Guid id)
     {
-        var cacheKey = $"catalog:detail:v4:{id}";
+        var cacheKey = $"catalog:detail:v5:{id}";
         var cachedManga = await CacheGet<MangaCard>(cacheKey);
         if (cachedManga != null) return cachedManga;
 
         var ggManga = await truyengg.GetDetail(id);
         if (ggManga != null)
         {
-            await CacheSet(cacheKey, ggManga, TimeSpan.FromMinutes(10));
+            await CacheSet(cacheKey, ggManga, TimeSpan.FromMinutes(20));
             return ggManga;
         }
 
         var data = await Get($"/manga/{id}?includes[]=cover_art&includes[]=author");
         var m = Map(data["data"]!, isThumbnail: false);
         await Stats([m]);
-        await CacheSet(cacheKey, m, TimeSpan.FromMinutes(10));
+        await CacheSet(cacheKey, m, TimeSpan.FromMinutes(20));
         return m;
     }
 
@@ -681,7 +694,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
     public async Task<List<ChapterCard>> GetAllChapters(Guid id, string language)
     {
-        var cacheKey = $"catalog:all_chapters:v3:{id}:{language}";
+        var cacheKey = $"catalog:all_chapters:v4:{id}:{language}";
         var cached = await CacheGet<List<ChapterCard>>(cacheKey);
         if (cached != null && cached.Count > 0) return cached;
 
@@ -689,7 +702,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         if (ggChaps != null && ggChaps.Items.Count > 0)
         {
             var cleanGg = DeduplicateChapters(ggChaps.Items, ascending: true);
-            await CacheSet(cacheKey, cleanGg, TimeSpan.FromMinutes(10));
+            await CacheSet(cacheKey, cleanGg, TimeSpan.FromMinutes(20));
             return cleanGg;
         }
 
@@ -704,7 +717,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         }
         catch { }
 
-        if (language == "vi" || string.IsNullOrEmpty(language))
+        if ((language == "vi" || string.IsNullOrEmpty(language)) && mdChapters.Count == 0)
         {
             try
             {
@@ -724,7 +737,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         var deduplicated = DeduplicateChapters(mdChapters, ascending: true);
         if (deduplicated.Count > 0)
         {
-            await CacheSet(cacheKey, deduplicated, TimeSpan.FromMinutes(10));
+            await CacheSet(cacheKey, deduplicated, TimeSpan.FromMinutes(20));
         }
         return deduplicated;
     }
