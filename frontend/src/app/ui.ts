@@ -1,6 +1,6 @@
-import { Component, input, signal } from '@angular/core';
+import { Component, input, signal, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { Manga, compact, ago } from './core';
+import { Api, Manga, compact, ago } from './core';
 
 @Component({
   selector: 'app-icon',
@@ -55,7 +55,11 @@ export class Icon {
   imports: [RouterLink, Icon],
   template: `
 <article class="manga-card">
-  <a class="cover-link" [routerLink]="['/truyen-tranh', manga().id]" [attr.aria-label]="manga().title">
+  <a class="cover-link" 
+     [routerLink]="['/truyen-tranh', manga().id]" 
+     (mouseenter)="prefetch()" 
+     (touchstart)="prefetch()" 
+     [attr.aria-label]="manga().title">
     <img [src]="manga().cover" [alt]="manga().title" loading="lazy" decoding="async" referrerpolicy="no-referrer" (load)="loaded.set(true)" [class.loaded]="loaded()" (error)="fallback($event)">
     <div class="cover-caption">
       <h3 [title]="manga().title">{{manga().title}}</h3>
@@ -84,10 +88,19 @@ export class Icon {
 </article>`
 })
 export class MangaCardComponent {
+  api = inject(Api);
   manga = input.required<Manga>();
   loaded = signal(false);
   compact = compact;
   ago = ago;
+  private prefetched = false;
+
+  prefetch() {
+    if (this.prefetched) return;
+    this.prefetched = true;
+    this.api.prefetchDetail(this.manga().id);
+  }
+
   fallback(e: Event) {
     const img = e.target as HTMLImageElement;
     img.onerror = null;

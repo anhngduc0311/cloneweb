@@ -77,6 +77,24 @@ export class Api {
     }).catch(() => {});
   }
 
+  prefetchDetail(id: string, language = 'vi'): void {
+    if (!id) return;
+    const detailPath = '/catalog/' + id;
+    if (!this.hasCached(detailPath)) {
+      void this.request<Manga>(detailPath, 'GET', undefined, true).then(m => {
+        if (m && m.cover) this.preloadImages([m.cover]);
+      }).catch(() => {});
+    }
+    const chapPath = `/catalog/${id}/chapters?page=1&language=${language}&ascending=false`;
+    if (!this.hasCached(chapPath)) {
+      void this.request(chapPath, 'GET', undefined, true).catch(() => {});
+    }
+    const commPath = `/catalog/${id}/community`;
+    if (!this.hasCached(commPath)) {
+      void this.request(commPath, 'GET', undefined, true).catch(() => {});
+    }
+  }
+
   clearCache(prefix?: string) {
     if (!prefix) this.cache.clear();
     else { for (const k of this.cache.keys()) if (k.includes(prefix)) this.cache.delete(k); }

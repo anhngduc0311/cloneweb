@@ -19,7 +19,7 @@ import { Sidebar } from './sidebar';
   
   <div class="featured-carousel-track">
     @for(m of featured(); track m.id; let i = $index){
-      <a class="featured-card" [routerLink]="['/truyen-tranh', m.id]">
+      <a class="featured-card" [routerLink]="['/truyen-tranh', m.id]" (mouseenter)="api.prefetchDetail(m.id)" (touchstart)="api.prefetchDetail(m.id)">
         <img 
           [src]="m.cover" 
           [alt]="m.title" 

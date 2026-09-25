@@ -278,31 +278,69 @@ export class Detail {
       this.id = p.get('id')!;
       this.chapterPage.set(1);
       this.commentPage.set(1);
-      this.manga.set(null);
       this.firstChapter.set(null);
       this.preloaded = false;
-      void this.load();
+
+      // Check cache for instant rendering
+      const cachedManga = this.api.getCached<Manga>('/catalog/' + this.id);
+      if (cachedManga) {
+        this.manga.set(cachedManga);
+        this.loading.set(false);
+      } else {
+        this.manga.set(null);
+        this.loading.set(true);
+      }
+
+      const chapPath = `/catalog/${this.id}/chapters?` + this.api.query({
+        page: 1,
+        language: this.language,
+        ascending: this.ascending
+      });
+      const cachedChaps = this.api.getCached<Page<Chapter>>(chapPath);
+      if (cachedChaps) {
+        this.chapters.set(cachedChaps.items);
+        this.chapterTotal.set(cachedChaps.total);
+        this.chapterLoading.set(false);
+      } else {
+        this.chapters.set([]);
+        this.chapterLoading.set(true);
+      }
+
+      void this.loadAll();
     });
   }
 
-  async load() {
+  async loadAll() {
     const n = ++this.epoch;
-    this.loading.set(true);
     this.error.set('');
-    this.firstChapter.set(null);
+    
+    // Launch all independent API calls concurrently in parallel
+    const mangaPromise = this.loadManga(n);
+    const chapPromise = this.loadChapters();
+    const commPromise = this.loadCommunity();
+    const commentsPromise = this.loadComments();
+
+    await Promise.allSettled([mangaPromise, chapPromise, commPromise, commentsPromise]);
+    setTimeout(() => void this.preloadFirstChapter(), 1000);
+  }
+
+  async loadManga(n: number) {
     try {
       const m = await this.api.request<Manga>('/catalog/' + this.id, 'GET', undefined, true);
-      if (n !== this.epoch) return;
-      this.manga.set(m);
-      void this.loadChapters();
-      void this.loadComments();
-      void this.loadCommunity();
-      setTimeout(() => void this.preloadFirstChapter(), 2500);
+      if (n === this.epoch) {
+        this.manga.set(m);
+      }
     } catch (e) {
-      if (n === this.epoch) this.error.set(message(e));
+      if (n === this.epoch && !this.manga()) {
+        this.error.set(message(e));
+      }
     } finally {
       if (n === this.epoch) this.loading.set(false);
     }
+  }
+
+  async load() {
+    await this.loadAll();
   }
 
   async preloadFirstChapter() {
@@ -325,21 +363,33 @@ export class Detail {
 
   async loadChapters() {
     const n = ++this.chapterEpoch;
+    const chapPath = `/catalog/${this.id}/chapters?` + this.api.query({
+      page: this.chapterPage(),
+      language: this.language,
+      ascending: this.ascending
+    });
+
+    const cached = this.api.getCached<Page<Chapter>>(chapPath);
+    if (cached && cached.items) {
+      this.chapters.set(cached.items);
+      this.chapterTotal.set(cached.total);
+      this.chapterLoading.set(false);
+      return;
+    }
+
     this.chapterLoading.set(true);
     this.chapterError.set('');
     try {
-      const r = await this.api.request<Page<Chapter>>(`/catalog/${this.id}/chapters?` + this.api.query({
-        page: this.chapterPage(),
-        language: this.language,
-        ascending: this.ascending
-      }), 'GET', undefined, true);
+      const r = await this.api.request<Page<Chapter>>(chapPath, 'GET', undefined, true);
       if (n === this.chapterEpoch) {
         this.chapters.set(r.items);
         this.chapterTotal.set(r.total);
       }
     } catch (e) {
-      this.chapters.set([]);
-      this.chapterError.set(message(e));
+      if (n === this.chapterEpoch && !this.chapters().length) {
+        this.chapters.set([]);
+        this.chapterError.set(message(e));
+      }
     } finally {
       if (n === this.chapterEpoch) this.chapterLoading.set(false);
     }
