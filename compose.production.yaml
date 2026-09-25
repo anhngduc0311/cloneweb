@@ -1,0 +1,94 @@
+# Standalone production stack; do not combine with compose.yaml.
+name: akatruyen
+
+x-runtime: &runtime
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  db:
+    <<: *runtime
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: truyendex
+      POSTGRES_USER: truyendex
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Missing POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U truyendex -d truyendex"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    <<: *runtime
+    image: redis:7-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Missing REDIS_PASSWORD}
+    command: ["sh", "-ec", 'exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"']
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  meilisearch:
+    <<: *runtime
+    image: getmeili/meilisearch:v1.12
+    environment:
+      MEILI_ENV: production
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?Missing MEILI_MASTER_KEY}
+      MEILI_NO_ANALYTICS: "true"
+    volumes:
+      - meili_data:/meili_data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:7700/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    <<: *runtime
+    build: ./backend/TruyenDex.Api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:5080
+      ConnectionStrings__Database: Host=db;Database=truyendex;Username=truyendex;Password=${POSTGRES_PASSWORD}
+      ConnectionStrings__Redis: redis:6379,password=${REDIS_PASSWORD},abortConnect=false
+      Meilisearch__Url: http://meilisearch:7700
+      Meilisearch__ApiKey: ${MEILI_MASTER_KEY}
+      Jwt__Key: ${JWT_KEY:?Missing JWT_KEY}
+      Seed__AdminEmail: ${ADMIN_EMAIL:?Missing ADMIN_EMAIL}
+      Seed__AdminPassword: ${ADMIN_PASSWORD:?Missing ADMIN_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+
+  web:
+    <<: *runtime
+    build: ./frontend
+    depends_on: [api]
+    ports:
+      - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-80}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -T 5 -O /dev/null http://127.0.0.1/"]
+      interval: 10s
+      timeout: 6s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  postgres_data:
+  redis_data:
+  meili_data:

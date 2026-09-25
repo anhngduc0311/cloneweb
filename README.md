@@ -17,6 +17,41 @@ docker compose up -d --build
 - Mật khẩu DB, khóa JWT và tài khoản quản trị được sinh ngẫu nhiên trong `.env`, không đưa vào Git. Không cần tài khoản quản trị để đọc truyện; đăng ký người đọc trực tiếp ở `/dang-ky`.
 - Dừng: `docker compose down`. Dữ liệu nằm trong volume `postgres_data`; không thêm `-v` nếu muốn giữ dữ liệu.
 
+## Deploy lên VPS Ubuntu
+
+Upload hoặc clone **toàn bộ project** lên VPS, rồi chạy tại thư mục chứa `deploy.sh`:
+
+```bash
+# Lần đầu: cài Docker Engine/Compose nếu VPS chưa có, rồi deploy
+bash deploy.sh --install-docker
+
+# Những lần sau, khi đã cập nhật source
+git pull --ff-only
+bash deploy.sh
+```
+
+Script dùng `compose.production.yaml` riêng, project Docker `akatruyen`; không dùng stack phát triển trong `compose.yaml`. Script tự tạo `.env.production` với mật khẩu ngẫu nhiên và quyền `600`, build frontend/API, khởi động đủ 5 dịch vụ, chờ healthcheck và kiểm tra kết nối DB/Redis/Meilisearch qua `/api/health`. Container tự khởi động lại cùng Docker; log được giới hạn dung lượng. Cài Docker qua [APT repository chính thức](https://docs.docker.com/engine/install/ubuntu/); cần root hoặc sudo khi cài đặt hoặc khi tài khoản chưa có quyền dùng Docker.
+
+Mặc định website mở tại `http://IP_VPS` (cổng 80). Mở cổng tương ứng trong firewall của nhà cung cấp VPS. API, PostgreSQL, Redis và Meilisearch chỉ truy cập trong mạng Docker. Docker có thể bỏ qua rule UFW cho cổng đã publish; quản lý truy cập bằng firewall nhà cung cấp hoặc chuỗi `DOCKER-USER`.
+
+```bash
+# Kiểm tra/tạo cấu hình, chưa build hay khởi động container
+bash deploy.sh --check
+
+# Đổi cổng cho lần chạy này nếu cổng 80 đã được sử dụng
+WEB_PORT=8080 bash deploy.sh
+
+# Sau khi deploy, xem trạng thái / log
+docker compose -p akatruyen --env-file .env.production -f compose.production.yaml ps
+docker compose -p akatruyen --env-file .env.production -f compose.production.yaml logs --tail=100 -f
+```
+
+Để lưu cổng lâu dài, chỉnh `WEB_PORT` trong `.env.production`. Nếu dùng Nginx/Caddy trên VPS làm reverse proxy HTTPS, đặt `WEB_BIND=127.0.0.1`, `WEB_PORT=8080` trong file này và proxy tới `http://127.0.0.1:8080`. Script chưa tự cấu hình tên miền/chứng chỉ HTTPS.
+
+Tài khoản admin ban đầu nằm trong `ADMIN_EMAIL` và `ADMIN_PASSWORD` của `.env.production`. File không được đưa vào Git hoặc in ra log. Đổi các giá trị seed sau lần đầu không đổi mật khẩu tài khoản đã tồn tại. Giữ bản sao `.env.production` cùng bản sao lưu database; không xóa file này để tạo lại mật khẩu khi volume đã có dữ liệu.
+
+Deploy lại giữ nguyên named volumes, không chạy `down -v` hoặc prune. Đây là cập nhật tại chỗ, có thể gián đoạn ngắn khi thay container; migration DB tự chạy lúc API khởi động. Sao lưu DB trước khi cập nhật phiên bản có thay đổi schema. Script báo lỗi và trả mã khác 0 nếu build/khởi động/healthcheck thất bại; không tự rollback migration. Chỉ deploy source đang có trên VPS, không tự pull Git hay upload từ máy cá nhân.
+
 ## Chạy phát triển
 
 Yêu cầu Node.js 24, .NET SDK 10, Docker Desktop và PowerShell 7.
