@@ -21,6 +21,7 @@ export class App {
   account = signal(false);
   settingsOpen = signal(false);
   genresOpen = signal(false);
+  mobileSearchOpen = signal(false);
   tags = signal<{ id: string; name: string }[]>([]);
   draft: Settings = { ...this.store.settings() };
   reader = signal(false);
@@ -37,6 +38,7 @@ export class App {
   constructor() {
     if (typeof window !== 'undefined') {
       this.reader.set(window.location.pathname.includes('/chuong/'));
+      this.applyTheme(this.store.settings().theme);
     }
     this.router.events.subscribe(e => {
       if (e instanceof NavigationEnd) {
@@ -44,10 +46,29 @@ export class App {
         this.account.set(false);
         this.genresOpen.set(false);
         this.suggestionsOpen.set(false);
+        this.mobileSearchOpen.set(false);
         this.reader.set(e.urlAfterRedirects.includes('/chuong/'));
         window.scrollTo(0, 0);
       }
     });
+  }
+
+  toggleTheme() {
+    const current = this.store.settings().theme;
+    const next = current === 'light' ? 'dark' : 'light';
+    const newSettings = { ...this.store.settings(), theme: next as 'dark' | 'light' };
+    this.store.saveSettings(newSettings);
+    this.applyTheme(next);
+  }
+
+  private applyTheme(theme: string) {
+    if (typeof document !== 'undefined') {
+      if (theme === 'light') {
+        document.documentElement.setAttribute('data-theme', 'light');
+      } else {
+        document.documentElement.removeAttribute('data-theme');
+      }
+    }
   }
 
   onQueryInput() {
@@ -83,13 +104,19 @@ export class App {
           this.loadingSuggestions.set(false);
         }
       }
-    }, 250);
+    }, 220);
   }
 
   onFocus() {
     if (this.query.trim().length > 0 && (this.suggestions().length > 0 || this.loadingSuggestions())) {
       this.suggestionsOpen.set(true);
     }
+  }
+
+  clearSearch() {
+    this.query = '';
+    this.suggestions.set([]);
+    this.suggestionsOpen.set(false);
   }
 
   onKeydown(event: KeyboardEvent) {
@@ -115,16 +142,19 @@ export class App {
       }
     } else if (event.key === 'Escape') {
       this.suggestionsOpen.set(false);
+      this.mobileSearchOpen.set(false);
     }
   }
 
   selectManga(m: Manga) {
     this.suggestionsOpen.set(false);
+    this.mobileSearchOpen.set(false);
     void this.router.navigate(['/truyen-tranh', m.id]);
   }
 
   search() {
     this.suggestionsOpen.set(false);
+    this.mobileSearchOpen.set(false);
     if (!this.query.trim()) return;
     void this.router.navigate(['/tim-truyen-nang-cao'], { queryParams: { q: this.query.trim() } });
   }
@@ -150,6 +180,7 @@ export class App {
 
   saveSettings() {
     this.store.saveSettings(this.draft);
+    this.applyTheme(this.draft.theme);
     this.settingsOpen.set(false);
   }
 
@@ -171,5 +202,6 @@ export class App {
     this.account.set(false);
     this.genresOpen.set(false);
     this.suggestionsOpen.set(false);
+    this.mobileSearchOpen.set(false);
   }
 }

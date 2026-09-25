@@ -101,7 +101,7 @@ app.MapGet("/api/health", async (AppDb db, IServiceProvider sp) => {
         redis = redisOk ? "connected" : "disabled/unreachable",
         meilisearch = meiliOk ? "connected" : "disabled/unreachable",
         ports = new {
-            redis = 63799,
+            redis = 6379,
             meilisearch = 7709,
             postgres = 54329
         },

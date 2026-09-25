@@ -290,7 +290,13 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
     private static string StripHtml(string input)
     {
         if (string.IsNullOrEmpty(input)) return "";
-        return Regex.Replace(input, "<.*?>", string.Empty).Trim();
+        var decoded = System.Net.WebUtility.HtmlDecode(input);
+        var cleaned = Regex.Replace(decoded, "<.*?>", string.Empty);
+        cleaned = Regex.Replace(cleaned, @"Truyện tranh\s+.*?được cập nhật nhanh và đầy đủ nhất tại\s+\S+", string.Empty, RegexOptions.IgnoreCase);
+        cleaned = Regex.Replace(cleaned, @"Bạn đọc đừng quên để lại bình luận và chia sẻ,\s*ủng hộ.*$", string.Empty, RegexOptions.IgnoreCase | RegexOptions.Multiline);
+        cleaned = Regex.Replace(cleaned, @"Đọc truyện\s+.*?tại\s+\S+", string.Empty, RegexOptions.IgnoreCase);
+        cleaned = Regex.Replace(cleaned, @"Xem truyện\s+.*?tại\s+\S+", string.Empty, RegexOptions.IgnoreCase);
+        return Regex.Replace(cleaned, @"\s+", " ").Trim();
     }
 
     private List<MangaCard> ParseGridHtml(string html, string defaultCountry = "ja")

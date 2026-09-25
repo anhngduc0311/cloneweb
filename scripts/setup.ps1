@@ -14,7 +14,7 @@ Get-Content '.env' | ForEach-Object { if ($_ -match '^([^#=]+)=(.*)$') { $settin
 @{
     ConnectionStrings = @{
         Database = "Host=localhost;Port=54329;Database=truyendex;Username=truyendex;Password=$($settings.POSTGRES_PASSWORD)"
-        Redis = "localhost:63799,password=$($settings.REDIS_PASSWORD),abortConnect=false"
+        Redis = "localhost:6379,password=$($settings.REDIS_PASSWORD),abortConnect=false"
     }
     Meilisearch = @{
         Url = "http://localhost:7709"

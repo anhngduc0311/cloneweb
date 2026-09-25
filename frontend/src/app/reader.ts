@@ -18,9 +18,12 @@ export interface SpeedLevel {
   selector: 'app-reader',
   imports: [FormsModule, RouterLink, Icon],
   template: `
-<div class="reader-container" (click)="onReaderClick($event)">
+<div class="reader-container" 
+     (click)="onReaderClick($event)"
+     (touchstart)="onTouchStart($event)"
+     (touchend)="onTouchEnd($event)">
   @if(error()){
-    <div class="error-state">
+    <div class="error-state glass-panel">
       <app-icon name="info"/>
       <h2>Chưa thể mở chương</h2>
       <p>{{error()}}</p>
@@ -83,13 +86,13 @@ export interface SpeedLevel {
           <div class="mode-dropdown-wrap">
             <button class="tool-btn btn-mode-toggle" 
                     (click)="toggleMode()" 
-                    [title]="mode() === 'vertical' ? 'Đang cuộn dọc (Click để đổi sang từng trang)' : 'Đang từng trang (Click để đổi sang cuộn dọc)'">
+                    [title]="mode() === 'vertical' ? 'Đang cuộn dọc (Click đổi sang từng trang)' : 'Đang từng trang (Click đổi sang cuộn dọc)'">
               <app-icon [name]="mode() === 'vertical' ? 'scroll' : 'book'" style="color: #f5a000; width: 16px; height: 16px;"/>
               <span class="tool-text">{{ mode() === 'vertical' ? 'Cuộn dọc' : 'Từng trang' }}</span>
             </button>
           </div>
 
-          <!-- Zoom Controls Group -->
+          <!-- Zoom Controls Group (Desktop) -->
           <div class="zoom-header-group">
             <button class="tool-btn btn-zoom-action" 
                     (click)="zoomOut()" 
@@ -216,12 +219,13 @@ export interface SpeedLevel {
             }@else{
               <img [src]="pageUrl(url, i)" 
                    [alt]="'Trang ' + (i + 1) + ' — ' + r.chapter.title" 
-                   [loading]="i < 2 ? 'eager' : 'lazy'" 
+                   [loading]="i < 3 ? 'eager' : 'lazy'" 
                    decoding="async" 
                    [attr.fetchpriority]="i === 0 ? 'high' : 'auto'" 
                    referrerpolicy="no-referrer" 
                    (load)="onLoaded(i)" 
                    (error)="imageError(i)">
+              <div class="page-number-indicator">{{ i + 1 }} / {{ pages().length }}</div>
             }
           </div>
         }
@@ -291,7 +295,7 @@ export interface SpeedLevel {
           <app-icon name="chevron" class="select-arrow"/>
         </div>
 
-        <button class="btn-nav-chap btn-nav-next" [disabled]="!next()" (click)="move(1)">
+        <button class="btn-nav-chap btn-nav-next primary" [disabled]="!next()" (click)="move(1)">
           <span>Chương sau</span> <app-icon name="arrowRight" style="width: 14px; height: 14px;"/>
         </button>
       </div>
@@ -306,14 +310,33 @@ export interface SpeedLevel {
       </div>
     </div>
 
-    <!-- 4. FLOATING SCROLL TO TOP BUTTON -->
+    <!-- 4. MOBILE FLOATING QUICK BAR (Visible when controls active) -->
+    <div class="reader-mobile-floating-bar glass-panel" [class.is-hidden]="isHeaderHidden && !isPinned" (click)="$event.stopPropagation()">
+      <button class="btn-float-action" [disabled]="!previous()" (click)="move(-1)" aria-label="Chương trước">
+        <app-icon name="arrowLeft"/>
+      </button>
+      
+      <div class="float-chap-info">
+        <select aria-label="Chọn chương nhanh" [ngModel]="r.chapter.id" (ngModelChange)="go($event)">
+          @for(c of r.navigation; track c.id){
+            <option [value]="c.id">{{ c.title }}</option>
+          }
+        </select>
+      </div>
+
+      <button class="btn-float-action btn-float-next" [disabled]="!next()" (click)="move(1)" aria-label="Chương sau">
+        <app-icon name="arrowRight"/>
+      </button>
+    </div>
+
+    <!-- 5. FLOATING SCROLL TO TOP BUTTON -->
     @if(showScrollTop){
       <button class="btn-scroll-top glass-panel" (click)="scrollToTop()" title="Cuộn lên đầu trang" aria-label="Lên đầu trang">
         <app-icon name="arrowUp" style="width: 18px; height: 18px;"/>
       </button>
     }
 
-    <!-- 5. REPORT MODAL POPUP -->
+    <!-- 6. REPORT MODAL POPUP -->
     @if(showReportModal){
       <div class="report-modal-backdrop" (click)="showReportModal = false">
         <div class="report-modal-dialog glass-panel" (click)="$event.stopPropagation()">
@@ -362,7 +385,8 @@ export interface SpeedLevel {
     }
   }
 </div>
-`})
+`
+})
 export class Reader implements OnInit, OnDestroy {
   api = inject(Api);
   store = inject(Store);
@@ -379,8 +403,12 @@ export class Reader implements OnInit, OnDestroy {
   id = '';
   epoch = 0;
 
+  // Touch Swipe Gesture State
+  private touchStartX = 0;
+  private touchStartY = 0;
+
   // Zoom Width State
-  zoomWidth = signal<number>(900); // 900px default (100%)
+  zoomWidth = signal<number>(900);
   showZoomMenu = false;
   zoomLevels: ZoomLevel[] = [
     { label: '50%', width: 500 },
@@ -406,7 +434,7 @@ export class Reader implements OnInit, OnDestroy {
 
   // Auto-scroll State
   isAutoScrolling = false;
-  autoScrollSpeed = 2; // Default 2x (85px/s)
+  autoScrollSpeed = 2;
   showSpeedMenu = false;
   autoScrollSpeeds: SpeedLevel[] = [
     { label: '1x (Chậm)', speed: 1 },
@@ -668,6 +696,29 @@ export class Reader implements OnInit, OnDestroy {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  // Touch Swipe Gesture Handling (Single-page mode)
+  onTouchStart(e: TouchEvent): void {
+    if (e.touches.length === 1) {
+      this.touchStartX = e.touches[0].clientX;
+      this.touchStartY = e.touches[0].clientY;
+    }
+  }
+
+  onTouchEnd(e: TouchEvent): void {
+    if (this.mode() !== 'single' || e.changedTouches.length === 0) return;
+    const deltaX = e.changedTouches[0].clientX - this.touchStartX;
+    const deltaY = e.changedTouches[0].clientY - this.touchStartY;
+
+    // If horizontal swipe is significant and more than vertical
+    if (Math.abs(deltaX) > 45 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+      if (deltaX > 0) {
+        this.prevSinglePage();
+      } else {
+        this.nextSinglePage();
+      }
+    }
+  }
+
   // Auto-Scroll Feature
   toggleAutoScroll(): void {
     if (this.isAutoScrolling) {
@@ -732,9 +783,9 @@ export class Reader implements OnInit, OnDestroy {
   // Fullscreen & Pinning
   toggleFullscreen(): void {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
+      document.documentElement.requestFullscreen().catch(() => { });
     } else {
-      if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+      if (document.exitFullscreen) document.exitFullscreen().catch(() => { });
     }
   }
 
@@ -750,7 +801,7 @@ export class Reader implements OnInit, OnDestroy {
 
   onReaderClick(e: MouseEvent): void {
     const target = e.target as HTMLElement;
-    if (target.closest('button, select, input, a, textarea, .glass-panel, .header-menu, .report-modal-dialog')) {
+    if (target.closest('button, select, input, a, textarea, .glass-panel, .header-menu, .report-modal-dialog, .reader-mobile-floating-bar')) {
       return;
     }
     this.showZoomMenu = false;
@@ -773,11 +824,11 @@ export class Reader implements OnInit, OnDestroy {
 
     // Smart Header Auto-hide
     if (!this.isPinned && !this.isHeaderHovered) {
-      if (currentScrollY > 60 && currentScrollY > this.lastScrollY + 6) {
+      if (currentScrollY > 60 && currentScrollY > this.lastScrollY + 8) {
         this.isHeaderHidden = true;
         this.showZoomMenu = false;
         this.showSpeedMenu = false;
-      } else if (currentScrollY < this.lastScrollY - 6 || currentScrollY <= 20) {
+      } else if (currentScrollY < this.lastScrollY - 8 || currentScrollY <= 20) {
         this.isHeaderHidden = false;
       }
     }
