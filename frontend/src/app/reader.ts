@@ -225,7 +225,6 @@ export interface SpeedLevel {
                    referrerpolicy="no-referrer" 
                    (load)="onLoaded(i)" 
                    (error)="imageError(i)">
-              <div class="page-number-indicator">{{ i + 1 }} / {{ pages().length }}</div>
             }
           </div>
         }

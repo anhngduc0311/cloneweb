@@ -3055,18 +3055,6 @@ small {
     object-fit: contain;
   }
 
-  .page-number-indicator {
-    position: absolute;
-    bottom: 8px;
-    right: 8px;
-    background: rgba(0, 0, 0, 0.7);
-    color: #cbd5e1;
-    font-size: 11px;
-    padding: 2px 7px;
-    border-radius: 4px;
-    pointer-events: none;
-    backdrop-filter: blur(4px);
-  }
 }
 
 .reader-single-page-wrap {
@@ -4403,9 +4391,6 @@ small {
     display: none !important;
   }
 
-  .page-number-indicator {
-    display: none !important;
-  }
 }
 
 /* SMALL MOBILE BREAKPOINT (<= 400px) */
