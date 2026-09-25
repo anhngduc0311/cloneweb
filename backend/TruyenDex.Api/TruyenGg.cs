@@ -132,7 +132,7 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
         _ = CacheSetString($"truyengg:chap_manga:{chapId}", mangaId.ToString(), TimeSpan.FromDays(30));
     }
 
-    private async Task<string?> ResolveSlug(Guid id)
+    public async Task<string?> ResolveSlug(Guid id)
     {
         if (MangaSlugMap.TryGetValue(id, out var slug) && !string.IsNullOrEmpty(slug)) return slug;
         slug = await CacheGetString($"truyengg:slug:{id}");

@@ -276,9 +276,54 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         }
     }
 
+    private async Task EnsureTopChapters(List<MangaCard> items, int targetCount = 3)
+    {
+        if (items.Count == 0) return;
+        var sem = new SemaphoreSlim(8);
+        var tasks = items.Where(m => m.Chapters.Count < targetCount).Select(async m =>
+        {
+            await sem.WaitAsync();
+            try
+            {
+                var slug = await truyengg.ResolveSlug(m.Id);
+                if (!string.IsNullOrEmpty(slug))
+                {
+                    var chaps = await truyengg.GetChapters(m.Id, 1, targetCount, ascending: false);
+                    if (chaps != null && chaps.Items.Count > 0)
+                    {
+                        m.Chapters = chaps.Items.Take(targetCount).ToList();
+                    }
+                }
+                else
+                {
+                    var chaps = await Chapters(m.Id, "vi", 1, ascending: false);
+                    if (chaps != null && chaps.Items.Count > 0)
+                    {
+                        m.Chapters = chaps.Items.Take(targetCount).ToList();
+                    }
+                    else
+                    {
+                        var enChaps = await Chapters(m.Id, "en", 1, ascending: false);
+                        if (enChaps != null && enChaps.Items.Count > 0)
+                        {
+                            m.Chapters = enChaps.Items.Take(targetCount).ToList();
+                        }
+                    }
+                }
+            }
+            catch { }
+            finally
+            {
+                sem.Release();
+            }
+        });
+
+        await Task.WhenAll(tasks);
+    }
+
     public async Task<CatalogPage> Home(int page, int size)
     {
-        var cacheKey = $"catalog:home:v11:{page}:{size}";
+        var cacheKey = $"catalog:home:v12:{page}:{size}";
         var cachedPage = await CacheGet<CatalogPage>(cacheKey);
         if (cachedPage != null) return cachedPage;
 
@@ -391,6 +436,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
         // Exclude any remaining Manhwa/Manhua items, sort by newest chapter update descending, and take page size
         merged = merged.Where(m => !IsManhwaOrManhua(m)).OrderByDescending(x => x.UpdatedAt).Take(size).ToList();
+        await EnsureTopChapters(merged, 3);
 
         var result = new CatalogPage(merged, total + ggItems.Count, page, size);
         await CacheSet(cacheKey, result, TimeSpan.FromMinutes(5));
@@ -399,7 +445,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
     public async Task<CatalogPage> Featured(int size = 20)
     {
-        var cacheKey = $"catalog:featured:manhwa_manhua:v2:{size}";
+        var cacheKey = $"catalog:featured:manhwa_manhua:v3:{size}";
         var cached = await CacheGet<CatalogPage>(cacheKey);
         if (cached != null) return cached;
 
@@ -472,6 +518,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         }
 
         var finalItems = merged.OrderByDescending(x => x.UpdatedAt).Take(size).ToList();
+        await EnsureTopChapters(finalItems, 3);
         var res = new CatalogPage(finalItems, finalItems.Count, 1, size);
         await CacheSet(cacheKey, res, TimeSpan.FromMinutes(5));
         return res;
@@ -479,7 +526,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
     public async Task<CatalogPage> Search(int page, int size, string? q, string? genre, string? status, string? country, string? demographic, string? language, string? sort, int? year)
     {
-        var cacheKey = $"catalog:search:v6:{page}:{size}:{q}:{genre}:{status}:{country}:{demographic}:{language}:{sort}:{year}";
+        var cacheKey = $"catalog:search:v7:{page}:{size}:{q}:{genre}:{status}:{country}:{demographic}:{language}:{sort}:{year}";
         var cachedSearch = await CacheGet<CatalogPage>(cacheKey);
         if (cachedSearch != null) return cachedSearch;
 
@@ -583,6 +630,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             catch { }
         }
 
+        await EnsureTopChapters(items, 3);
         var res = new CatalogPage(items, total, page, size);
         await CacheSet(cacheKey, res, TimeSpan.FromMinutes(5));
 

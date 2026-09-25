@@ -279,7 +279,12 @@ export interface SpeedLevel {
     <!-- 3. BOTTOM CHAPTER NAVIGATION & FOOTER -->
     <div class="reader-bottom-nav glass-panel">
       <h2>Bạn đã đọc hết <span>{{ r.chapter.title }}</span></h2>
-      <p class="chapter-info-sub">{{ r.manga.title }} · {{ pages().length }} trang</p>
+      <p class="chapter-info-sub">
+        @if(r.manga.title && r.manga.title !== 'Null Meta'){
+          {{ r.manga.title }} · 
+        }
+        {{ pages().length }} trang
+      </p>
 
       <div class="bottom-nav-row">
         <button class="btn-nav-chap" [disabled]="!previous()" (click)="move(-1)">
