@@ -10,8 +10,13 @@ import { Sidebar } from './sidebar';
   imports: [RouterLink, FormsModule, Icon, Pagination, Sidebar],
   template: `
 <div class="breadcrumb">
-  <a routerLink="/">Trang chủ</a>
-  <span>›</span>
+  <button type="button" class="btn-breadcrumb-back" (click)="goBack($event)" aria-label="Quay lại" title="Quay lại trang trước">
+    <app-icon name="arrowLeft"/>
+    <span>Quay lại</span>
+  </button>
+  <span class="breadcrumb-sep">›</span>
+  <a routerLink="/" (click)="goBack($event)">Trang chủ</a>
+  <span class="breadcrumb-sep">›</span>
   <span class="current-crumb">{{manga()?.title || 'Chi tiết truyện'}}</span>
 </div>
 
@@ -515,6 +520,17 @@ export class Detail {
       await this.loadComments();
     } catch (e) {
       this.store.notify(message(e));
+    }
+  }
+
+  goBack(e?: Event) {
+    if (e) e.preventDefault();
+    if (typeof window !== 'undefined') {
+      if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        void this.router.navigate(['/']);
+      }
     }
   }
 }

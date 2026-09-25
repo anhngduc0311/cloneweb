@@ -62,7 +62,11 @@ import { Icon } from './ui';
 
     <div class="rank-list">
       @for(m of ranking(); track m.id; let i = $index){
-        <a class="rank-row" [routerLink]="['/truyen-tranh', m.id]">
+        <a class="rank-row" 
+           [id]="'manga-card-' + m.id" 
+           [attr.data-manga-id]="m.id" 
+           [routerLink]="['/truyen-tranh', m.id]"
+           (click)="savePosition(m.id)">
           <span class="rank-number" [class.top-1]="i === 0" [class.top-2]="i === 1" [class.top-3]="i === 2">{{i + 1}}</span>
           <img [src]="m.cover" [alt]="m.title" loading="lazy" decoding="async" referrerpolicy="no-referrer" (load)="$any($event.target).classList.add('loaded')" (error)="$any($event.target).classList.add('loaded')">
           <div class="rank-info">
@@ -92,7 +96,7 @@ import { Icon } from './ui';
             <small>{{ago(c.createdAt)}}</small>
           </div>
           <p>{{c.body}}</p>
-          <a [routerLink]="['/truyen-tranh', c.mangaId]" class="comment-comic-link">
+          <a [routerLink]="['/truyen-tranh', c.mangaId]" (click)="savePosition(c.mangaId)" class="comment-comic-link">
             <app-icon name="book" style="width:11px;height:11px;"/> {{c.mangaTitle}}
           </a>
         </div>
@@ -125,6 +129,13 @@ export class Sidebar {
   constructor() {
     void this.load('hot');
     void this.api.request<Page<Comment>>('/comments').then(r => this.comments.set(r.items.slice(0, 5))).catch(() => {});
+  }
+
+  savePosition(id: string) {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('home_scroll_y', window.scrollY.toString());
+      sessionStorage.setItem('home_manga_id', id);
+    }
   }
 
   async load(sort: string) {

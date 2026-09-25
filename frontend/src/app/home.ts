@@ -27,7 +27,13 @@ import { Sidebar } from './sidebar';
   
   <div class="featured-carousel-track">
     @for(m of featured(); track m.id; let i = $index){
-      <a class="featured-card" [routerLink]="['/truyen-tranh', m.id]" (mouseenter)="api.prefetchDetail(m.id)" (touchstart)="api.prefetchDetail(m.id)">
+      <a class="featured-card" 
+         [id]="'manga-card-' + m.id" 
+         [attr.data-manga-id]="m.id"
+         [routerLink]="['/truyen-tranh', m.id]" 
+         (click)="savePosition(m.id)"
+         (mouseenter)="api.prefetchDetail(m.id)" 
+         (touchstart)="api.prefetchDetail(m.id)">
         <img 
           [src]="m.cover" 
           [alt]="m.title" 
@@ -129,6 +135,46 @@ export class Home {
     void this.loadFeatured();
   }
 
+  savePosition(id?: string) {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('home_scroll_y', window.scrollY.toString());
+      if (id) sessionStorage.setItem('home_manga_id', id);
+    }
+  }
+
+  restorePosition() {
+    if (typeof window === 'undefined') return;
+    const savedY = sessionStorage.getItem('home_scroll_y');
+    const savedMangaId = sessionStorage.getItem('home_manga_id');
+    if (!savedY && !savedMangaId) return;
+
+    setTimeout(() => {
+      let restored = false;
+      if (savedMangaId) {
+        const targetEl = document.getElementById('manga-card-' + savedMangaId) || 
+                         document.querySelector(`[data-manga-id="${savedMangaId}"]`);
+        if (targetEl) {
+          const rect = targetEl.getBoundingClientRect();
+          const targetY = window.scrollY + rect.top - 80;
+          window.scrollTo({ top: Math.max(0, targetY), behavior: 'instant' });
+          targetEl.classList.add('last-viewed-highlight');
+          setTimeout(() => targetEl.classList.remove('last-viewed-highlight'), 2500);
+          restored = true;
+        }
+      }
+
+      if (!restored && savedY) {
+        const y = Number(savedY);
+        if (!isNaN(y) && y > 0) {
+          window.scrollTo({ top: y, behavior: 'instant' });
+        }
+      }
+
+      sessionStorage.removeItem('home_scroll_y');
+      sessionStorage.removeItem('home_manga_id');
+    }, 60);
+  }
+
   async loadFeatured() {
     this.featuredLoading.set(true);
     this.featuredError.set(false);
@@ -185,6 +231,7 @@ export class Home {
       this.total.set(cached.total);
       this.loading.set(false);
       this.prefetchAdjacent();
+      this.restorePosition();
       return;
     }
 
@@ -195,6 +242,7 @@ export class Home {
         this.items.set(r.items);
         this.total.set(r.total);
         this.prefetchAdjacent();
+        this.restorePosition();
       }
     } catch (e) {
       if (n === this.epoch) this.error.set(message(e));

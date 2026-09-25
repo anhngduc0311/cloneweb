@@ -48,7 +48,13 @@ export class App {
         this.suggestionsOpen.set(false);
         this.mobileSearchOpen.set(false);
         this.reader.set(e.urlAfterRedirects.includes('/chuong/'));
-        window.scrollTo(0, 0);
+
+        const hasSavedHomeScroll = typeof window !== 'undefined' && (sessionStorage.getItem('home_scroll_y') || sessionStorage.getItem('home_manga_id'));
+        const isReturningHome = e.urlAfterRedirects === '/' || e.urlAfterRedirects.startsWith('/?');
+
+        if (!hasSavedHomeScroll || !isReturningHome) {
+          window.scrollTo(0, 0);
+        }
       }
     });
   }

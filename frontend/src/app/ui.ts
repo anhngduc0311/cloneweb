@@ -54,9 +54,10 @@ export class Icon {
   selector: 'app-card',
   imports: [RouterLink, Icon],
   template: `
-<article class="manga-card">
+<article class="manga-card" [id]="'manga-card-' + manga().id" [attr.data-manga-id]="manga().id">
   <a class="cover-link" 
      [routerLink]="['/truyen-tranh', manga().id]" 
+     (click)="savePosition()"
      (mouseenter)="prefetch()" 
      (touchstart)="prefetch()" 
      [attr.aria-label]="manga().title">
@@ -70,7 +71,7 @@ export class Icon {
       <span><app-icon name="star"/> {{manga().rating.toFixed(1)}}</span>
       <span><app-icon name="heart"/> {{compact(manga().follows)}}</span>
     </div>
-    <h3><a [routerLink]="['/truyen-tranh', manga().id]" [title]="manga().title">{{manga().title}}</a></h3>
+    <h3><a [routerLink]="['/truyen-tranh', manga().id]" (click)="savePosition()" [title]="manga().title">{{manga().title}}</a></h3>
   </div>
   <div class="mini-chapters">
     @for(c of manga().chapters.slice(0, 3); track c.id){
@@ -94,6 +95,13 @@ export class MangaCardComponent {
   compact = compact;
   ago = ago;
   private prefetched = false;
+
+  savePosition() {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('home_scroll_y', window.scrollY.toString());
+      sessionStorage.setItem('home_manga_id', this.manga().id);
+    }
+  }
 
   prefetch() {
     if (this.prefetched) return;
