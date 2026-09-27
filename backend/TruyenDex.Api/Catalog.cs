@@ -12,6 +12,7 @@ public record ChapterCard(Guid Id, Guid MangaId, string Title, decimal Number, s
 public class MangaCard
 {
     public Guid Id { get; set; }
+    public string? Slug { get; set; }
     public string Title { get; set; } = "";
     public string AlternativeTitle { get; set; } = "";
     public string Author { get; set; } = "";
@@ -540,25 +541,42 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         return res;
     }
 
+    private static int GetRelevanceScore(MangaCard m, string q)
+    {
+        var qNorm = TruyenGg.NormalizeTitle(q);
+        if (string.IsNullOrEmpty(qNorm)) return 10;
+
+        var tNorm = TruyenGg.NormalizeTitle(m.Title);
+        var altNorm = TruyenGg.NormalizeTitle(m.AlternativeTitle);
+
+        if (tNorm == qNorm) return 0;
+        if (altNorm == qNorm) return 1;
+        if (tNorm.StartsWith(qNorm) || qNorm.StartsWith(tNorm)) return 2;
+        if (altNorm.StartsWith(qNorm) || qNorm.StartsWith(altNorm)) return 3;
+        if (tNorm.Contains(qNorm)) return 4;
+        if (altNorm.Contains(qNorm)) return 5;
+
+        var words = q.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length > 1 && words.All(w => (m.Title + " " + m.AlternativeTitle).Contains(w, StringComparison.OrdinalIgnoreCase)))
+            return 6;
+
+        return 10;
+    }
+
     public async Task<CatalogPage> Search(int page, int size, string? q, string? genre, string? status, string? country, string? demographic, string? language, string? sort, int? year)
     {
-        var cacheKey = $"catalog:search:v7:{page}:{size}:{q}:{genre}:{status}:{country}:{demographic}:{language}:{sort}:{year}";
+        var cacheKey = $"catalog:search:v8:{page}:{size}:{q}:{genre}:{status}:{country}:{demographic}:{language}:{sort}:{year}";
         var cachedSearch = await CacheGet<CatalogPage>(cacheKey);
-        if (cachedSearch != null) return cachedSearch;
-
-        if (!string.IsNullOrWhiteSpace(q) && meili != null)
+        if (cachedSearch != null)
         {
-            try {
-                var index = meili.Index("mangas");
-                var meiliHits = await index.SearchAsync<MangaCard>(q.Trim(), new SearchQuery { Limit = size, Offset = (page - 1) * size });
-                if (meiliHits?.Hits?.Any() == true)
+            foreach (var item in cachedSearch.Items)
+            {
+                if (!string.IsNullOrEmpty(item.Slug))
                 {
-                    var totalHits = (meiliHits as SearchResult<MangaCard>)?.EstimatedTotalHits ?? meiliHits.Hits.Count;
-                    var resHits = new CatalogPage(meiliHits.Hits.ToList(), totalHits, page, size);
-                    await CacheSet(cacheKey, resHits, TimeSpan.FromMinutes(5));
-                    return resHits;
+                    truyengg.RegisterManga(item.Id, item.Slug);
                 }
-            } catch { }
+            }
+            return cachedSearch;
         }
 
         var order = sort switch { "rating" => "rating", "hot" => "followedCount", "title" => "title", "new" => "createdAt", _ => "latestUploadedChapter" };
@@ -585,66 +603,86 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
         var items = new List<MangaCard>();
         int total = 0;
-        try
-        {
-            var result = await Get(path);
-            var rawItems = result["data"]!.AsArray().Select(x => Map(x!, isThumbnail: true)).ToList();
-            await Stats(rawItems);
-            total = Math.Min((int?)result["total"] ?? 0, 10000);
-            foreach (var m in rawItems)
-            {
-                bool isDuplicate = false;
-                for (int i = 0; i < items.Count; i++)
-                {
-                    var existing = items[i];
-                    if (TruyenGg.IsSameManga(existing.Title, existing.AlternativeTitle, m.Title, m.AlternativeTitle))
-                    {
-                        isDuplicate = true;
-                        if (ShouldPreferCandidate(m, existing))
-                        {
-                            items[i] = m;
-                        }
-                        break;
-                    }
-                }
-                if (!isDuplicate)
-                {
-                    items.Add(m);
-                }
-            }
-        }
-        catch { }
 
-        // Also search TruyenGGVN if query is provided
-        if (!string.IsNullOrWhiteSpace(q))
+        // Run MangaDex search and TruyenGG search in parallel
+        var mdTask = Task.Run(async () =>
         {
             try
             {
-                var ggResults = await truyengg.Search(q, page);
-                foreach (var gg in ggResults)
+                var result = await Get(path);
+                var rawItems = result["data"]!.AsArray().Select(x => Map(x!, isThumbnail: true)).ToList();
+                await Stats(rawItems);
+                var mdTotal = Math.Min((int?)result["total"] ?? 0, 10000);
+                return (rawItems, mdTotal);
+            }
+            catch
+            {
+                return (new List<MangaCard>(), 0);
+            }
+        });
+
+        var ggTask = !string.IsNullOrWhiteSpace(q)
+            ? truyengg.Search(q, page)
+            : Task.FromResult(new List<MangaCard>());
+
+        await Task.WhenAll(mdTask, ggTask);
+
+        var (rawItems, mdTotal) = await mdTask;
+        var ggResults = await ggTask;
+        total = mdTotal;
+
+        // 1. Add TruyenGG results first
+        foreach (var gg in ggResults)
+        {
+            items.Add(gg);
+        }
+
+        // 2. Add MangaDex results, merging/deduplicating against TruyenGG
+        foreach (var m in rawItems)
+        {
+            bool isDuplicate = false;
+            for (int i = 0; i < items.Count; i++)
+            {
+                var existing = items[i];
+                if (TruyenGg.IsSameManga(existing.Title, existing.AlternativeTitle, m.Title, m.AlternativeTitle))
                 {
-                    bool isDuplicate = false;
-                    for (int i = 0; i < items.Count; i++)
+                    isDuplicate = true;
+                    if (ShouldPreferCandidate(m, existing))
                     {
-                        var existing = items[i];
-                        if (TruyenGg.IsSameManga(existing.Title, existing.AlternativeTitle, gg.Title, gg.AlternativeTitle))
-                        {
-                            isDuplicate = true;
-                            if (ShouldPreferCandidate(gg, existing))
-                            {
-                                items[i] = gg;
-                            }
-                            break;
-                        }
+                        items[i] = m;
                     }
-                    if (!isDuplicate)
-                    {
-                        items.Add(gg);
-                    }
+                    break;
+                }
+            }
+            if (!isDuplicate)
+            {
+                items.Add(m);
+            }
+        }
+
+        // Fallback: If both external sources returned 0 items and meili is available, search local meili index
+        if (items.Count == 0 && !string.IsNullOrWhiteSpace(q) && meili != null)
+        {
+            try
+            {
+                var index = meili.Index("mangas");
+                var meiliHits = await index.SearchAsync<MangaCard>(q.Trim(), new SearchQuery { Limit = size, Offset = (page - 1) * size });
+                if (meiliHits?.Hits?.Any() == true)
+                {
+                    items.AddRange(meiliHits.Hits);
+                    total = (meiliHits as SearchResult<MangaCard>)?.EstimatedTotalHits ?? meiliHits.Hits.Count;
                 }
             }
             catch { }
         }
+
+        // Sort items by relevance to search query
+        if (!string.IsNullOrWhiteSpace(q) && items.Count > 1)
+        {
+            items = items.OrderBy(m => GetRelevanceScore(m, q.Trim())).ToList();
+        }
+
+        if (total < items.Count) total = items.Count;
 
         await EnsureTopChapters(items, 3);
         var res = new CatalogPage(items, total, page, size);

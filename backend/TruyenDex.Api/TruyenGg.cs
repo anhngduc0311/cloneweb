@@ -43,7 +43,7 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
     public static string NormalizeTitle(string? title)
     {
         if (string.IsNullOrWhiteSpace(title)) return "";
-        var unaccented = RemoveDiacritics(title).ToLowerInvariant();
+        var unaccented = RemoveDiacritics(title).Replace('×', 'x').Replace('✕', 'x').Replace('✖', 'x').ToLowerInvariant();
         var sb = new StringBuilder();
         foreach (var c in unaccented)
         {
@@ -112,19 +112,19 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
     public static string ToSlug(string? title)
     {
         if (string.IsNullOrWhiteSpace(title)) return "";
-        var unaccented = RemoveDiacritics(title).ToLowerInvariant();
+        var unaccented = RemoveDiacritics(title).Replace('×', 'x').Replace('✕', 'x').Replace('✖', 'x').ToLowerInvariant();
         var s = Regex.Replace(unaccented, @"[^\w\s-]", "");
         s = Regex.Replace(s, @"\s+", "-").Trim('-');
         return s;
     }
 
-    private void RegisterManga(Guid id, string slug)
+    public void RegisterManga(Guid id, string slug)
     {
         MangaSlugMap[id] = slug;
         _ = CacheSetString($"truyengg:slug:{id}", slug, TimeSpan.FromDays(30));
     }
 
-    private void RegisterChapter(Guid chapId, string chapHref, Guid mangaId)
+    public void RegisterChapter(Guid chapId, string chapHref, Guid mangaId)
     {
         ChapterUrlMap[chapId] = chapHref;
         ChapterMangaMap[chapId] = mangaId;
@@ -148,24 +148,21 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
             {
                 var index = meili.Index("mangas");
                 var doc = await index.GetDocumentAsync<MangaCard>(id.ToString());
-                if (doc != null && !string.IsNullOrEmpty(doc.Title))
+                if (doc != null)
                 {
-                    var baseSlug = ToSlug(doc.Title);
-                    if (!string.IsNullOrEmpty(baseSlug))
+                    if (!string.IsNullOrEmpty(doc.Slug))
                     {
-                        if (CreateGuid("truyengg:manga:" + baseSlug) == id)
+                        RegisterManga(id, doc.Slug);
+                        return doc.Slug;
+                    }
+                    if (!string.IsNullOrEmpty(doc.Title))
+                    {
+                        var searchRes = await Search(doc.Title, 1);
+                        var match = searchRes.FirstOrDefault(x => x.Id == id);
+                        if (match != null && !string.IsNullOrEmpty(match.Slug))
                         {
-                            RegisterManga(id, baseSlug);
-                            return baseSlug;
-                        }
-                        for (int i = 1; i <= 35000; i++)
-                        {
-                            var candidate = $"{baseSlug}-{i}";
-                            if (CreateGuid("truyengg:manga:" + candidate) == id)
-                            {
-                                RegisterManga(id, candidate);
-                                return candidate;
-                            }
+                            RegisterManga(id, match.Slug);
+                            return match.Slug;
                         }
                     }
                 }
@@ -375,6 +372,7 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
             var card = new MangaCard
             {
                 Id = mangaId,
+                Slug = slug,
                 Title = title,
                 AlternativeTitle = string.IsNullOrEmpty(otherTitle) ? title : otherTitle,
                 Author = "Đang cập nhật",
@@ -441,11 +439,21 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
     public async Task<List<MangaCard>> Search(string q, int page = 1)
     {
         if (string.IsNullOrWhiteSpace(q)) return await GetLatest(page);
-        var cacheKey = $"truyengg:search:{q.Trim().ToLowerInvariant()}:{page}";
+        var cacheKey = $"truyengg:search:v3:{q.Trim().ToLowerInvariant()}:{page}";
         var cached = await CacheGetString(cacheKey);
         if (cached != null)
         {
-            try { return JsonSerializer.Deserialize<List<MangaCard>>(cached) ?? []; } catch { }
+            try {
+                var list = JsonSerializer.Deserialize<List<MangaCard>>(cached) ?? [];
+                foreach (var item in list)
+                {
+                    if (!string.IsNullOrEmpty(item.Slug))
+                    {
+                        RegisterManga(item.Id, item.Slug);
+                    }
+                }
+                return list;
+            } catch { }
         }
 
         var items = new List<MangaCard>();
@@ -464,15 +472,22 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
                 var html = await res.Content.ReadAsStringAsync(cts.Token);
                 if (!string.IsNullOrWhiteSpace(html))
                 {
-                    var regex = new Regex(@"<li>\s*<a href=""([^""]+)""[^>]*>[\s\S]*?<img[^>]*src=""([^""]+)""[\s\S]*?<p class=""name"">([^<]+)<\/p>\s*<p class=""name_other"">([^<]*)<\/p>[\s\S]*?<\/li>", RegexOptions.Compiled);
-                    var matches = regex.Matches(html);
-
-                    foreach (Match m in matches)
+                    var liMatches = Regex.Matches(html, @"<li>([\s\S]*?)<\/li>");
+                    foreach (Match liMatch in liMatches)
                     {
-                        var href = m.Groups[1].Value.Trim();
-                        var coverUrl = m.Groups[2].Value.Trim();
-                        var name = StripHtml(m.Groups[3].Value);
-                        var otherName = StripHtml(m.Groups[4].Value);
+                        var li = liMatch.Groups[1].Value;
+                        var hrefMatch = Regex.Match(li, @"href=""([^""]+)""");
+                        var nameMatch = Regex.Match(li, @"class=""name""[^>]*>([^<]+)<\/p>");
+                        if (!hrefMatch.Success || !nameMatch.Success) continue;
+
+                        var href = hrefMatch.Groups[1].Value.Trim();
+                        var name = StripHtml(nameMatch.Groups[1].Value);
+
+                        var imgMatch = Regex.Match(li, @"<img[^>]+src=""([^""]+)""");
+                        var coverUrl = imgMatch.Success ? imgMatch.Groups[1].Value.Trim() : "";
+
+                        var altMatch = Regex.Match(li, @"class=""name_other""[^>]*>([\s\S]*?)<\/p>");
+                        var otherName = altMatch.Success ? StripHtml(altMatch.Groups[1].Value) : "";
 
                         var slug = href.Replace("https://truyenggvn.com", "").Replace("/truyen-tranh/", "").Trim('/');
                         if (string.IsNullOrEmpty(slug)) continue;
@@ -483,9 +498,10 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
                         var mangaId = CreateGuid("truyengg:manga:" + slug);
                         RegisterManga(mangaId, slug);
 
-                        items.Add(new MangaCard
+                        var card = new MangaCard
                         {
                             Id = mangaId,
+                            Slug = slug,
                             Title = name,
                             AlternativeTitle = string.IsNullOrEmpty(otherName) ? name : otherName,
                             Author = "Đang cập nhật",
@@ -494,7 +510,26 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
                             ContentRating = "safe",
                             Rating = 8.5,
                             UpdatedAt = DateTime.UtcNow
-                        });
+                        };
+
+                        var chapMatch = Regex.Match(li, @"<p>\s*(Chương\s*[^<]+)<\/p>", RegexOptions.IgnoreCase);
+                        if (chapMatch.Success)
+                        {
+                            var chapTitle = chapMatch.Groups[1].Value.Trim();
+                            var numStr = Regex.Match(chapTitle, @"[\d.]+").Value;
+                            decimal.TryParse(numStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var chapNum);
+                            card.Chapters.Add(new ChapterCard(
+                                Id: Guid.NewGuid(),
+                                MangaId: mangaId,
+                                Title: chapTitle,
+                                Number: chapNum,
+                                Language: "vi",
+                                PublishedAt: DateTime.UtcNow,
+                                Group: "TruyenGG"
+                            ));
+                        }
+
+                        items.Add(card);
                     }
                 }
             }
@@ -551,6 +586,7 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
         return new MangaCard
         {
             Id = id,
+            Slug = slug,
             Title = title,
             AlternativeTitle = altTitle,
             Author = author,
