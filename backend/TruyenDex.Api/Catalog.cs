@@ -276,14 +276,14 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         }
     }
 
-    private async Task EnsureTopChapters(List<MangaCard> items, int targetCount = 1)
+    private async Task EnsureTopChapters(List<MangaCard> items, int targetCount = 3)
     {
         if (items.Count == 0) return;
-        var missing = items.Where(m => m.Chapters == null || m.Chapters.Count == 0).Take(4).ToList();
+        var missing = items.Where(m => m.Chapters == null || m.Chapters.Count < targetCount).ToList();
         if (missing.Count == 0) return;
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-        var sem = new SemaphoreSlim(4);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        var sem = new SemaphoreSlim(8);
         var tasks = missing.Select(async m =>
         {
             await sem.WaitAsync(cts.Token);
@@ -292,10 +292,11 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
                 var slug = await truyengg.ResolveSlug(m.Id);
                 if (!string.IsNullOrEmpty(slug))
                 {
-                    var chaps = await truyengg.GetChapters(m.Id, 1, targetCount, ascending: false);
+                    var chaps = await truyengg.GetChapters(m.Id, 1, 10, ascending: false);
                     if (chaps != null && chaps.Items.Count > 0)
                     {
-                        m.Chapters = chaps.Items.Take(targetCount).ToList();
+                        var existing = m.Chapters ?? [];
+                        m.Chapters = DeduplicateChapters(existing.Concat(chaps.Items), ascending: false).Take(targetCount).ToList();
                     }
                 }
                 else
@@ -303,14 +304,16 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
                     var chaps = await Chapters(m.Id, "vi", 1, ascending: false);
                     if (chaps != null && chaps.Items.Count > 0)
                     {
-                        m.Chapters = chaps.Items.Take(targetCount).ToList();
+                        var existing = m.Chapters ?? [];
+                        m.Chapters = DeduplicateChapters(existing.Concat(chaps.Items), ascending: false).Take(targetCount).ToList();
                     }
                     else
                     {
                         var enChaps = await Chapters(m.Id, "en", 1, ascending: false);
                         if (enChaps != null && enChaps.Items.Count > 0)
                         {
-                            m.Chapters = enChaps.Items.Take(targetCount).ToList();
+                            var existing = m.Chapters ?? [];
+                            m.Chapters = DeduplicateChapters(existing.Concat(enChaps.Items), ascending: false).Take(targetCount).ToList();
                         }
                     }
                 }
@@ -331,7 +334,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
     public async Task<CatalogPage> Home(int page, int size)
     {
-        var cacheKey = $"catalog:home:v13:{page}:{size}";
+        var cacheKey = $"catalog:home:v14:{page}:{size}";
         var cachedPage = await CacheGet<CatalogPage>(cacheKey);
         if (cachedPage != null) return cachedPage;
 
@@ -449,7 +452,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
         // Exclude any remaining Manhwa/Manhua items, sort by newest chapter update descending, and take page size
         merged = merged.Where(m => !IsManhwaOrManhua(m)).OrderByDescending(x => x.UpdatedAt).Take(size).ToList();
-        await EnsureTopChapters(merged, 1);
+        await EnsureTopChapters(merged, 3);
 
         var result = new CatalogPage(merged, total + ggItems.Count, page, size);
         await CacheSet(cacheKey, result, TimeSpan.FromMinutes(15));

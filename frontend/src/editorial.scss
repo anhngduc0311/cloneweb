@@ -51,6 +51,22 @@
 .brand .brand-wordmark > .brand-period { color: var(--accent); font-weight: 800; }
 .header-search-wrap { width: min(440px, 38vw); }
 .header-search { border-radius: 9px; height: 42px; background: var(--panel); }
+.header-search input,
+.header-search input:focus,
+.header-search input:focus-visible,
+.header-search button,
+.header-search button:focus,
+.header-search button:focus-visible,
+.mobile-search-form input,
+.mobile-search-form input:focus,
+.mobile-search-form input:focus-visible,
+.mobile-search-form button,
+.mobile-search-form button:focus,
+.mobile-search-form button:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
+}
 .account-button { border-radius: 9px; }
 .desktop-nav-bar { justify-content: flex-start; gap: 26px; margin-bottom: 0; min-height: 64px; }
 .desktop-nav-bar a, .desktop-nav-bar button { padding: 20px 0; font-size: 13px; }
