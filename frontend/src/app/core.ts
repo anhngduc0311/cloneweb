@@ -132,6 +132,8 @@ export class Store {
   notify(text:string){this.toast.set(text);clearTimeout(this.timer);this.timer=setTimeout(()=>this.toast.set(''),4500);}
   async restore(){try{this.user.set(await this.api.request<User>('/auth/me'));await this.refreshLibrary();}catch{sessionStorage.removeItem('td-token');this.user.set(null);}}
   async login(email:string,password:string,name?:string){const s=await this.api.request<{token:string;user:User}>('/auth/'+(name!==undefined?'register':'login'),'POST',{email,password,name});sessionStorage.setItem('td-token',s.token);this.user.set(s.user);await this.refreshLibrary();}
+  async loginWithGoogle(credential?: string, code?: string, redirectUri?: string){const s=await this.api.request<{token:string;user:User}>('/auth/google','POST',{credential,code,redirectUri});sessionStorage.setItem('td-token',s.token);this.user.set(s.user);await this.refreshLibrary();}
+  async getGoogleConfig(){return await this.api.request<{clientId:string}>('/auth/google/config');}
   logout(){sessionStorage.removeItem('td-token');this.user.set(null);this.follows.set([]);this.history.set(readStored('td-history',[]));this.notify('Đã đăng xuất.');}
   async refreshLibrary(){if(!this.user())return;const r=await this.api.request<{follows:LibraryItem[];history:LibraryItem[]}>('/library');this.follows.set(r.follows);this.history.set(r.history);}
   isFollowed(id:string){return this.follows().some(x=>x.mangaId===id);}

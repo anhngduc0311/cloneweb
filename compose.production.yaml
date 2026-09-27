@@ -67,6 +67,8 @@ services:
       Jwt__Key: ${JWT_KEY:?Missing JWT_KEY}
       Seed__AdminEmail: ${ADMIN_EMAIL:?Missing ADMIN_EMAIL}
       Seed__AdminPassword: ${ADMIN_PASSWORD:?Missing ADMIN_PASSWORD}
+      Google__ClientId: ${GOOGLE_CLIENT_ID:-}
+      Google__ClientSecret: ${GOOGLE_CLIENT_SECRET:-}
     depends_on:
       db:
         condition: service_healthy

@@ -7,3 +7,4 @@ public record MangaRequest(string Title, string AlternativeTitle, string Author,
     string[] Genres, string Status, string Country, string Demographic, int Year, bool Featured);
 public record ChapterRequest(decimal Number, string Title, string Language, string[] Pages);
 public record FollowRequest(bool Followed);
+public record GoogleAuthRequest(string? Credential, string? Code, string? RedirectUri);

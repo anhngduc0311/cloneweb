@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using System.Text.Json.Nodes;
 using StackExchange.Redis;
 using Meilisearch;
 using TruyenDex.Api;
@@ -16,6 +17,7 @@ var key = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationExceptio
 if (key.Length < 32) throw new InvalidOperationException("Jwt key must be at least 32 characters.");
 builder.Services.AddDbContext<AppDb>(o => o.UseNpgsql(builder.Configuration.GetConnectionString("Database")));
 builder.Services.AddMemoryCache(o => o.SizeLimit = 1000);
+builder.Services.AddHttpClient();
 
 // Redis registration
 var redisConn = builder.Configuration.GetConnectionString("Redis");
@@ -124,6 +126,189 @@ app.MapPost("/api/auth/login", async (LoginRequest req, AppDb db, PasswordHasher
         return Results.Json(new { message = "Email hoặc mật khẩu không đúng." }, statusCode: 401);
     return Results.Ok(Session(u));
 }).RequireRateLimiting("auth");
+
+var googleClientId = builder.Configuration["Google:ClientId"] ?? "";
+var googleClientSecret = builder.Configuration["Google:ClientSecret"] ?? "";
+
+app.MapGet("/api/auth/google/config", () => Results.Ok(new { clientId = googleClientId }));
+
+app.MapPost("/api/auth/google", async (GoogleAuthRequest req, AppDb db, IHttpClientFactory httpFactory) => {
+    var client = httpFactory.CreateClient();
+    string? email = null;
+    string? name = null;
+
+    if (!string.IsNullOrWhiteSpace(req.Credential))
+    {
+        try
+        {
+            var res = await client.GetAsync($"https://oauth2.googleapis.com/tokeninfo?id_token={Uri.EscapeDataString(req.Credential.Trim())}");
+            if (res.IsSuccessStatusCode)
+            {
+                var info = await res.Content.ReadFromJsonAsync<JsonNode>();
+                var aud = info?["aud"]?.ToString();
+                if (aud == googleClientId)
+                {
+                    email = info?["email"]?.ToString();
+                    name = info?["name"]?.ToString();
+                }
+            }
+        }
+        catch { }
+    }
+    else if (!string.IsNullOrWhiteSpace(req.Code))
+    {
+        try
+        {
+            var tokenRes = await client.PostAsync("https://oauth2.googleapis.com/token", new FormUrlEncodedContent(new Dictionary<string, string> {
+                { "code", req.Code.Trim() },
+                { "client_id", googleClientId },
+                { "client_secret", googleClientSecret },
+                { "redirect_uri", req.RedirectUri ?? "" },
+                { "grant_type", "authorization_code" }
+            }));
+            if (tokenRes.IsSuccessStatusCode)
+            {
+                var tokenJson = await tokenRes.Content.ReadFromJsonAsync<JsonNode>();
+                var accessToken = tokenJson?["access_token"]?.ToString();
+                var idToken = tokenJson?["id_token"]?.ToString();
+
+                if (!string.IsNullOrEmpty(accessToken))
+                {
+                    using var userReq = new HttpRequestMessage(HttpMethod.Get, "https://www.googleapis.com/oauth2/v3/userinfo");
+                    userReq.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+                    using var userRes = await client.SendAsync(userReq);
+                    if (userRes.IsSuccessStatusCode)
+                    {
+                        var userInfo = await userRes.Content.ReadFromJsonAsync<JsonNode>();
+                        email = userInfo?["email"]?.ToString();
+                        name = userInfo?["name"]?.ToString();
+                    }
+                }
+                if (string.IsNullOrEmpty(email) && !string.IsNullOrEmpty(idToken))
+                {
+                    var infoRes = await client.GetAsync($"https://oauth2.googleapis.com/tokeninfo?id_token={Uri.EscapeDataString(idToken)}");
+                    if (infoRes.IsSuccessStatusCode)
+                    {
+                        var info = await infoRes.Content.ReadFromJsonAsync<JsonNode>();
+                        email = info?["email"]?.ToString();
+                        name = info?["name"]?.ToString();
+                    }
+                }
+            }
+        }
+        catch { }
+    }
+
+    if (string.IsNullOrWhiteSpace(email))
+    {
+        return Results.BadRequest(new { message = "Không thể xác thực thông tin đăng nhập Google." });
+    }
+
+    email = email.Trim().ToLowerInvariant();
+    var u = await db.Users.SingleOrDefaultAsync(x => x.Email == email);
+    if (u is null)
+    {
+        var displayName = string.IsNullOrWhiteSpace(name) ? email.Split('@')[0] : name.Trim();
+        if (displayName.Length > 60) displayName = displayName[..60];
+        u = new AppUser { Email = email, Name = displayName, PasswordHash = "", Role = "reader" };
+        db.Users.Add(u);
+        await db.SaveChangesAsync();
+    }
+
+    return Results.Ok(Session(u));
+}).RequireRateLimiting("auth");
+
+app.MapGet("/api/auth/google/login", (string? returnUrl, HttpContext ctx) => {
+    var scheme = ctx.Request.Scheme;
+    var host = ctx.Request.Host.Value;
+    if (ctx.Request.Headers.TryGetValue("X-Forwarded-Proto", out var proto)) scheme = proto.ToString();
+    if (ctx.Request.Headers.TryGetValue("X-Forwarded-Host", out var fHost)) host = fHost.ToString();
+    var redirectUri = $"{scheme}://{host}/api/auth/google/callback";
+    var state = Uri.EscapeDataString(returnUrl ?? "/");
+    var url = $"https://accounts.google.com/o/oauth2/v2/auth?client_id={Uri.EscapeDataString(googleClientId)}&redirect_uri={Uri.EscapeDataString(redirectUri)}&response_type=code&scope=openid%20email%20profile&state={state}&prompt=select_account";
+    return Results.Redirect(url);
+});
+
+app.MapGet("/api/auth/google/callback", async (string? code, string? state, string? error, HttpContext ctx, AppDb db, IHttpClientFactory httpFactory) => {
+    if (!string.IsNullOrEmpty(error) || string.IsNullOrEmpty(code))
+    {
+        return Results.Redirect("/dang-nhap?error=" + Uri.EscapeDataString(error ?? "Đăng nhập Google thất bại"));
+    }
+
+    var scheme = ctx.Request.Scheme;
+    var host = ctx.Request.Host.Value;
+    if (ctx.Request.Headers.TryGetValue("X-Forwarded-Proto", out var proto)) scheme = proto.ToString();
+    if (ctx.Request.Headers.TryGetValue("X-Forwarded-Host", out var fHost)) host = fHost.ToString();
+    var redirectUri = $"{scheme}://{host}/api/auth/google/callback";
+
+    var client = httpFactory.CreateClient();
+    var tokenRes = await client.PostAsync("https://oauth2.googleapis.com/token", new FormUrlEncodedContent(new Dictionary<string, string> {
+        { "code", code },
+        { "client_id", googleClientId },
+        { "client_secret", googleClientSecret },
+        { "redirect_uri", redirectUri },
+        { "grant_type", "authorization_code" }
+    }));
+
+    if (!tokenRes.IsSuccessStatusCode)
+    {
+        return Results.Redirect("/dang-nhap?error=" + Uri.EscapeDataString("Không thể xác thực mã từ Google"));
+    }
+
+    var tokenJson = await tokenRes.Content.ReadFromJsonAsync<JsonNode>();
+    var accessToken = tokenJson?["access_token"]?.ToString();
+    var idToken = tokenJson?["id_token"]?.ToString();
+
+    string? email = null;
+    string? name = null;
+
+    if (!string.IsNullOrEmpty(accessToken))
+    {
+        using var userReq = new HttpRequestMessage(HttpMethod.Get, "https://www.googleapis.com/oauth2/v3/userinfo");
+        userReq.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+        using var userRes = await client.SendAsync(userReq);
+        if (userRes.IsSuccessStatusCode)
+        {
+            var userInfo = await userRes.Content.ReadFromJsonAsync<JsonNode>();
+            email = userInfo?["email"]?.ToString();
+            name = userInfo?["name"]?.ToString();
+        }
+    }
+
+    if (string.IsNullOrEmpty(email) && !string.IsNullOrEmpty(idToken))
+    {
+        var infoRes = await client.GetAsync($"https://oauth2.googleapis.com/tokeninfo?id_token={Uri.EscapeDataString(idToken)}");
+        if (infoRes.IsSuccessStatusCode)
+        {
+            var info = await infoRes.Content.ReadFromJsonAsync<JsonNode>();
+            email = info?["email"]?.ToString();
+            name = info?["name"]?.ToString();
+        }
+    }
+
+    if (string.IsNullOrEmpty(email))
+    {
+        return Results.Redirect("/dang-nhap?error=" + Uri.EscapeDataString("Không lấy được email từ tài khoản Google"));
+    }
+
+    email = email.Trim().ToLowerInvariant();
+    var u = await db.Users.SingleOrDefaultAsync(x => x.Email == email);
+    if (u is null)
+    {
+        var displayName = string.IsNullOrWhiteSpace(name) ? email.Split('@')[0] : name.Trim();
+        if (displayName.Length > 60) displayName = displayName[..60];
+        u = new AppUser { Email = email, Name = displayName, PasswordHash = "", Role = "reader" };
+        db.Users.Add(u);
+        await db.SaveChangesAsync();
+    }
+
+    var sess = Session(u);
+    var tokenProp = sess.GetType().GetProperty("token")?.GetValue(sess)?.ToString();
+    var targetUrl = !string.IsNullOrEmpty(state) ? Uri.UnescapeDataString(state) : "/";
+    if (!targetUrl.StartsWith("/")) targetUrl = "/";
+
+    return Results.Redirect($"/dang-nhap?token={Uri.EscapeDataString(tokenProp ?? "")}&returnUrl={Uri.EscapeDataString(targetUrl)}");
+});
 app.MapGet("/api/auth/me", async (ClaimsPrincipal user, AppDb db) => {
     var u = await db.Users.FindAsync(UserId(user));
     return u is null ? Results.Unauthorized() : Results.Ok(new { u.Id, u.Name, u.Email, u.Role });
