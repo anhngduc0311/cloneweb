@@ -818,12 +818,35 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             return finalReader;
         }
 
-        var chapter = (await Get($"/chapter/{id}?includes[]=scanlation_group"))["data"]!;
-        var c = MapChapter(chapter);
-        var m = await Detail(c.MangaId);
+        // Fetch chapter metadata and image server URL in parallel for maximum speed
+        var chapterTask = Get($"/chapter/{id}?includes[]=scanlation_group");
+        var atHomeTask = Get($"/at-home/server/{id}");
+        await Task.WhenAll(chapterTask, atHomeTask);
 
-        var navigation = await GetAllChapters(c.MangaId, c.Language);
-        if (navigation == null || navigation.Count == 0)
+        var chapterNode = (await chapterTask)["data"]!;
+        var c = MapChapter(chapterNode);
+
+        // Fetch detail and navigation safely in parallel without blocking image display
+        var detailTask = Task.Run(async () =>
+        {
+            try { return await Detail(c.MangaId); }
+            catch { return new MangaCard { Id = c.MangaId, Title = c.Title }; }
+        });
+
+        var navTask = Task.Run(async () =>
+        {
+            try {
+                var list = await GetAllChapters(c.MangaId, c.Language);
+                return list ?? [];
+            }
+            catch { return new List<ChapterCard>(); }
+        });
+
+        await Task.WhenAll(detailTask, navTask);
+        var m = await detailTask;
+        var navigation = await navTask;
+
+        if (navigation.Count == 0)
         {
             navigation = [c];
         }
@@ -833,9 +856,10 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             navigation = DeduplicateChapters(navigation, ascending: true);
         }
 
-        var external = S(chapter["attributes"]?["externalUrl"]);
+        var external = S(chapterNode["attributes"]?["externalUrl"]);
         if (external.Length > 0) return new(c, m, [], [], external.StartsWith("https://") ? external : null, navigation);
-        var r = await Get($"/at-home/server/{id}");
+
+        var r = await atHomeTask;
         var baseUrl = S(r["baseUrl"]).TrimEnd('/');
         if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) || uri.Scheme != "https") throw new UpstreamException("Địa chỉ máy chủ ảnh không hợp lệ.");
         var hash = S(r["chapter"]?["hash"]);
