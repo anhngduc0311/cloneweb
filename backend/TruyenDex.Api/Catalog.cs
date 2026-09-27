@@ -694,7 +694,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
     public async Task<List<ChapterCard>> GetAllChapters(Guid id, string language)
     {
-        var cacheKey = $"catalog:all_chapters:v4:{id}:{language}";
+        var cacheKey = $"catalog:all_chapters:v5:{id}:{language}";
         var cached = await CacheGet<List<ChapterCard>>(cacheKey);
         if (cached != null && cached.Count > 0) return cached;
 
@@ -717,7 +717,33 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         }
         catch { }
 
-        if ((language == "vi" || string.IsNullOrEmpty(language)) && mdChapters.Count == 0)
+        // Check if MangaDex is missing chapters (e.g. no chapters, starts at chapter > 1 like Mayonaka Heart Tune starting at 71, or large gaps)
+        bool needsMoreChapters = false;
+        if (mdChapters.Count == 0)
+        {
+            needsMoreChapters = true;
+        }
+        else
+        {
+            var validNums = mdChapters.Where(c => c.Number > 0).Select(c => c.Number).OrderBy(n => n).ToList();
+            if (validNums.Count == 0 || validNums[0] > 1.5m || mdChapters.Count < 25)
+            {
+                needsMoreChapters = true;
+            }
+            else
+            {
+                for (int i = 0; i < validNums.Count - 1; i++)
+                {
+                    if (validNums[i + 1] - validNums[i] > 10m)
+                    {
+                        needsMoreChapters = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if ((language == "vi" || string.IsNullOrEmpty(language)) && needsMoreChapters)
         {
             try
             {
