@@ -676,82 +676,155 @@ small {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 10px 4px 4px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-full);
+  height: 38px;
+  padding: 3px 12px 3px 4px;
+  background: var(--surface, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-radius: var(--radius-full, 9999px);
   font-weight: 600;
-  font-size: 13px;
-  transition: all 0.2s ease;
+  font-size: 13.5px;
+  color: var(--text, #fff);
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 
   &:hover {
+    border-color: rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.08);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+
+  &.is-open {
     border-color: var(--accent);
-    color: var(--accent);
+    background: rgba(255, 255, 255, 0.09);
+    box-shadow: 0 0 0 3px var(--accent-soft, rgba(230, 81, 0, 0.2));
+
+    .account-chevron {
+      transform: rotate(180deg);
+      color: var(--accent);
+    }
   }
 }
 
 .account-avatar-pill {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: linear-gradient(135deg, rgba(255, 107, 0, 0.22), rgba(255, 61, 0, 0.38));
+  border: 1.5px solid rgba(255, 120, 40, 0.5);
+  color: #ff9142;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.25s ease;
+  overflow: hidden;
+
+  app-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+  }
+
+  .avatar-initial {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #fff;
+    text-transform: uppercase;
+    line-height: 1;
+  }
 }
 
 .account-username {
-  max-width: 110px;
+  max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  letter-spacing: -0.2px;
 }
 
-.caret {
-  font-size: 14px;
-  color: var(--muted);
+.account-chevron {
+  width: 12px;
+  height: 12px;
+  color: var(--muted, rgba(255, 255, 255, 0.5));
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s ease;
+  flex-shrink: 0;
+  margin-left: 1px;
 }
 
 .account-menu {
   position: absolute;
   right: 0;
-  top: calc(100% + 8px);
-  min-width: 240px;
-  border-radius: var(--radius-lg);
+  top: calc(100% + 10px);
+  min-width: 250px;
+  border-radius: var(--radius-lg, 16px);
   padding: 8px;
   z-index: 100;
-  box-shadow: var(--shadow);
+  background: var(--panel, #151820);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  animation: dropdownFade 0.2s ease-out;
+  gap: 3px;
+  animation: dropdownFade 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top right;
 
   a,
   button {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    border-radius: var(--radius-sm);
+    gap: 11px;
+    padding: 9px 12px;
+    border-radius: var(--radius-md, 10px);
     font-size: 13px;
     font-weight: 500;
     width: 100%;
     text-align: left;
-    color: var(--text);
+    color: var(--text, #fff);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: none;
+    background: transparent;
+
+    app-icon {
+      color: var(--muted);
+      transition: color 0.15s ease;
+    }
 
     &:hover {
-      background: var(--surface);
+      background: rgba(255, 255, 255, 0.08);
       color: var(--accent);
+
+      app-icon {
+        color: var(--accent);
+      }
     }
   }
 
   .logout-btn {
-    color: #ef4444;
+    color: #f87171;
+
+    app-icon {
+      color: #f87171;
+    }
 
     &:hover {
       background: rgba(239, 68, 68, 0.12);
       color: #ef4444;
+
+      app-icon {
+        color: #ef4444;
+      }
     }
   }
 }
@@ -3712,6 +3785,7 @@ small {
       display: none;
     }
 
+    .account-chevron,
     .caret {
       display: none;
     }

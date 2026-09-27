@@ -116,12 +116,18 @@
 
         <!-- Account Button & Dropdown -->
         <div class="account-wrap">
-          <button class="account-button" (click)="account.set(!account())" aria-label="Tài khoản">
+          <button class="account-button" [class.is-open]="account()" (click)="account.set(!account())" aria-label="Tài khoản">
             <span class="account-avatar-pill">
-              <app-icon name="user"/>
+              @if(store.user()){
+                <span class="avatar-initial">{{store.user()?.name?.slice(0,1)?.toUpperCase() || 'U'}}</span>
+              }@else{
+                <app-icon name="user"/>
+              }
             </span>
             <span class="account-username">{{store.user()?.name || 'Tài khoản'}}</span>
-            <span class="caret">⌄</span>
+            <svg class="account-chevron" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="4 6 8 10 12 6"></polyline>
+            </svg>
           </button>
           @if(account()){
             <div class="account-menu glass-panel" (click)="$event.stopPropagation()">
