@@ -224,6 +224,60 @@ app.MapGet("/api/catalog/image-proxy", async (string url, HttpContext ctx, IHttp
     ctx.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
     return Results.Stream(await res.Content.ReadAsStreamAsync(ct), contentType);
 });
+async Task<IResult> GenerateSitemap(AppDb db, Catalog catalog, HttpContext ctx)
+{
+    const string baseUrl = "https://akatruyen.com";
+    var sb = new StringBuilder();
+    sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+    sb.AppendLine("<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">");
+    
+    var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+    sb.AppendLine($"  <url><loc>{baseUrl}/</loc><lastmod>{today}</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url>");
+    sb.AppendLine($"  <url><loc>{baseUrl}/tim-truyen-nang-cao</loc><lastmod>{today}</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>");
+    sb.AppendLine($"  <url><loc>{baseUrl}/theo-doi</loc><lastmod>{today}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>");
+    sb.AppendLine($"  <url><loc>{baseUrl}/lich-su</loc><lastmod>{today}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>");
+    sb.AppendLine($"  <url><loc>{baseUrl}/dang-nhap</loc><lastmod>{today}</lastmod><changefreq>monthly</changefreq><priority>0.4</priority></url>");
+    sb.AppendLine($"  <url><loc>{baseUrl}/dang-ky</loc><lastmod>{today}</lastmod><changefreq>monthly</changefreq><priority>0.4</priority></url>");
+
+    var seenIds = new HashSet<Guid>();
+    try
+    {
+        var mangas = await db.Mangas
+            .AsNoTracking()
+            .OrderByDescending(m => m.UpdatedAt)
+            .Take(5000)
+            .Select(m => new { m.Id, m.UpdatedAt })
+            .ToListAsync();
+
+        foreach (var m in mangas)
+        {
+            seenIds.Add(m.Id);
+            var lastmod = m.UpdatedAt.ToString("yyyy-MM-dd");
+            sb.AppendLine($"  <url><loc>{baseUrl}/truyen-tranh/{m.Id}</loc><lastmod>{lastmod}</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>");
+        }
+    }
+    catch { }
+
+    try
+    {
+        var home = await catalog.Home(1, 28);
+        foreach (var m in home.Items)
+        {
+            if (seenIds.Add(m.Id))
+            {
+                var lastmod = m.UpdatedAt.ToString("yyyy-MM-dd");
+                sb.AppendLine($"  <url><loc>{baseUrl}/truyen-tranh/{m.Id}</loc><lastmod>{lastmod}</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>");
+            }
+        }
+    }
+    catch { }
+
+    sb.AppendLine("</urlset>");
+    ctx.Response.Headers.CacheControl = "public, max-age=3600";
+    return Results.Content(sb.ToString(), "application/xml", Encoding.UTF8);
+}
+app.MapGet("/api/sitemap.xml", GenerateSitemap);
+app.MapGet("/sitemap.xml", GenerateSitemap);
 using (var scope = app.Services.CreateScope()) {
     var db = scope.ServiceProvider.GetRequiredService<AppDb>();
     await db.Database.MigrateAsync();

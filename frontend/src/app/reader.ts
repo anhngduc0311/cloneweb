@@ -1,4 +1,5 @@
 import { Component, inject, signal, HostListener, OnInit, OnDestroy } from '@angular/core';
+import { Title } from '@angular/platform-browser';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Api, Store, Reader as ReaderData, message, proxyImage } from './core';
@@ -396,6 +397,7 @@ export class Reader implements OnInit, OnDestroy {
   store = inject(Store);
   route = inject(ActivatedRoute);
   router = inject(Router);
+  titleService = inject(Title);
 
   data = signal<ReaderData | null>(null);
   loading = signal(true);
@@ -530,6 +532,9 @@ export class Reader implements OnInit, OnDestroy {
       const r = await this.api.request<ReaderData>('/chapters/' + this.id, 'GET', undefined, true);
       if (n !== this.epoch) return;
       this.data.set(r);
+      if (r && r.manga && r.chapter) {
+        this.titleService.setTitle(`${r.manga.title} - ${r.chapter.title} | AkaTruyen`);
+      }
       void this.store.record(r).catch(e => this.store.notify(message(e)));
       window.scrollTo(0, 0);
       this.preloadUpcoming(0, 4);

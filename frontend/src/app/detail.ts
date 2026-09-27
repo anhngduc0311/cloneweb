@@ -1,4 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
+import { Title, Meta } from '@angular/platform-browser';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Api, Store, Manga, Chapter, Comment, Page, Reader as ReaderData, message, statuses, compact, ago, proxyImage, cleanDescription } from './core';
@@ -244,6 +245,8 @@ export class Detail {
   store = inject(Store);
   route = inject(ActivatedRoute);
   router = inject(Router);
+  titleService = inject(Title);
+  metaService = inject(Meta);
 
   manga = signal<Manga | null>(null);
   loading = signal(true);
@@ -290,6 +293,7 @@ export class Detail {
       const cachedManga = this.api.getCached<Manga>('/catalog/' + this.id);
       if (cachedManga) {
         this.manga.set(cachedManga);
+        this.titleService.setTitle(`${cachedManga.title} [Mới Nhất] - Đọc Truyện Tranh | AkaTruyen`);
         this.loading.set(false);
       } else {
         this.manga.set(null);
@@ -334,6 +338,9 @@ export class Detail {
       const m = await this.api.request<Manga>('/catalog/' + this.id, 'GET', undefined, true);
       if (n === this.epoch) {
         this.manga.set(m);
+        this.titleService.setTitle(`${m.title} [Mới Nhất] - Đọc Truyện Tranh | AkaTruyen`);
+        const desc = this.cleanDescription(m.description) || `Đọc truyện tranh ${m.title} tiếng Việt mới nhất online tại AkaTruyen (akatruyen.com).`;
+        this.metaService.updateTag({ name: 'description', content: desc.slice(0, 160) });
       }
     } catch (e) {
       if (n === this.epoch && !this.manga()) {

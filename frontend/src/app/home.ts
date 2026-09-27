@@ -10,9 +10,9 @@ import { Sidebar } from './sidebar';
   template: `
 <section class="discovery-intro">
   <div>
-    <span class="eyebrow">KHÔNG GIAN DÀNH CHO NGƯỜI MÊ TRUYỆN</span>
-    <h1>Câu chuyện hay.<br><span>Một thế giới mới.</span></h1>
-    <p>Tìm bộ truyện tiếp theo khiến bạn không thể rời mắt.</p>
+    <span class="eyebrow">AKATRUYEN · WEBSITE ĐỌC TRUYỆN TRANH ONLINE</span>
+    <h1>AkaTruyen<br><span>Kho truyện tranh đặc sắc</span></h1>
+    <p>Khám phá hàng ngàn bộ Manga, Manhwa, Manhua tuyển chọn tiếng Việt cập nhật mới nhất tại AkaTruyen.</p>
   </div>
   <a class="discover-link" routerLink="/tim-truyen-nang-cao">Khám phá truyện <app-icon name="arrowRight"/></a>
 </section>
