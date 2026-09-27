@@ -1,4 +1,4 @@
-import { Component, inject, signal, AfterViewInit } from '@angular/core';
+import { Component, inject, signal, AfterViewInit, OnDestroy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Store, message, ago } from './core';
@@ -79,7 +79,7 @@ import { Icon } from './ui';
   </section>
 </div>`
 })
-export class Auth implements AfterViewInit {
+export class Auth implements AfterViewInit, OnDestroy {
   store = inject(Store);
   route = inject(ActivatedRoute);
   router = inject(Router);
@@ -95,10 +95,13 @@ export class Auth implements AfterViewInit {
   confirm = '';
   returnUrl = '/';
 
+  private resizeObserver?: ResizeObserver;
+
   constructor() {
     this.route.url.subscribe(() => {
       this.register.set(this.router.url.startsWith('/dang-ky'));
       this.error.set('');
+      setTimeout(() => this.renderGoogleButton(), 50);
     });
     const ret = this.route.snapshot.queryParamMap.get('returnUrl');
     if (ret?.startsWith('/')) this.returnUrl = ret;
@@ -135,6 +138,26 @@ export class Auth implements AfterViewInit {
 
   ngAfterViewInit() {
     this.initGoogleSignIn();
+    if (typeof ResizeObserver !== 'undefined') {
+      const el = document.getElementById('google-btn-container');
+      if (el?.parentElement) {
+        let lastWidth = Math.floor(el.parentElement.clientWidth);
+        this.resizeObserver = new ResizeObserver(entries => {
+          for (const entry of entries) {
+            const w = Math.floor(entry.contentRect.width);
+            if (Math.abs(w - lastWidth) > 16) {
+              lastWidth = w;
+              this.renderGoogleButton();
+            }
+          }
+        });
+        this.resizeObserver.observe(el.parentElement);
+      }
+    }
+  }
+
+  ngOnDestroy() {
+    this.resizeObserver?.disconnect();
   }
 
   private initGoogleSignIn(retries = 10) {
@@ -157,22 +180,37 @@ export class Auth implements AfterViewInit {
           cancel_on_tap_outside: true
         });
 
-        const el = document.getElementById('google-btn-container');
-        if (el) {
-          w.google.accounts.id.renderButton(el, {
-            type: 'standard',
-            shape: 'rectangular',
-            theme: 'outline',
-            text: this.register() ? 'signup_with' : 'signin_with',
-            size: 'large',
-            locale: 'vi',
-            width: 376
-          });
-        }
+        this.renderGoogleButton();
       } catch { }
     } else if (retries > 0) {
       setTimeout(() => this.initGoogleSignIn(retries - 1), 300);
     }
+  }
+
+  private renderGoogleButton() {
+    const el = document.getElementById('google-btn-container');
+    if (!el) return;
+    const w = window as any;
+    if (!w.google?.accounts?.id) return;
+
+    el.innerHTML = '';
+    const parent = el.parentElement || el;
+    const availableWidth = parent.clientWidth || 320;
+    // Google GIS allows width between 200 and 400
+    const targetWidth = Math.max(200, Math.min(380, Math.floor(availableWidth)));
+    const isLight = document.documentElement.getAttribute('data-theme') === 'light' || this.store.settings().theme === 'light';
+
+    try {
+      w.google.accounts.id.renderButton(el, {
+        type: 'standard',
+        shape: 'rectangular',
+        theme: isLight ? 'outline' : 'filled_black',
+        text: this.register() ? 'signup_with' : 'signin_with',
+        size: 'large',
+        locale: 'vi',
+        width: targetWidth
+      });
+    } catch { }
   }
 
   loginWithGoogle() {

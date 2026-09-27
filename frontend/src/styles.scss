@@ -2750,15 +2750,21 @@ small {
   padding: 40px 14px 60px;
   display: flex;
   justify-content: center;
+  align-items: flex-start;
+  min-height: calc(100vh - 65px - 140px);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .auth-panel {
   width: 100%;
   max-width: 440px;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-lg, 16px);
   padding: 36px 32px;
   text-align: center;
   box-shadow: var(--shadow);
+  box-sizing: border-box;
+  overflow: hidden;
 
   .auth-brand {
     margin-bottom: 24px;
@@ -2780,14 +2786,30 @@ small {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   margin-bottom: 8px;
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 
   .gsi-slot {
     width: 100%;
+    max-width: 100%;
     display: flex;
     justify-content: center;
+    align-items: center;
     min-height: 44px;
+    overflow: hidden;
+    border-radius: var(--radius-md, 10px);
+    box-sizing: border-box;
+
+    > div,
+    iframe {
+      max-width: 100% !important;
+      margin: 0 auto !important;
+      border-radius: var(--radius-md, 10px) !important;
+      box-sizing: border-box !important;
+    }
 
     &:empty {
       display: none;
@@ -2805,6 +2827,7 @@ small {
   justify-content: center;
   gap: 12px;
   width: 100%;
+  max-width: 380px;
   height: 44px;
   border-radius: var(--radius-md, 10px);
   background: var(--surface, rgba(255, 255, 255, 0.05));
@@ -2815,6 +2838,7 @@ small {
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   padding: 0 16px;
+  box-sizing: border-box;
 
   &:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.1);
@@ -3812,6 +3836,7 @@ small {
 
   .site-container {
     padding: 0 12px;
+    padding-bottom: calc(72px + var(--safe-bottom, 0px));
   }
 
   .site-notice {
@@ -4305,8 +4330,45 @@ small {
     grid-template-columns: 1fr;
   }
 
+  .auth-wrap {
+    padding: 16px 12px calc(80px + var(--safe-bottom, 0px));
+    min-height: auto;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
   .auth-panel {
-    padding: 28px 18px;
+    padding: 24px 16px;
+    border-radius: 16px;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+
+    .auth-brand {
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      font-size: 20px;
+      margin-bottom: 6px;
+    }
+
+    p.muted {
+      font-size: 12.5px;
+      line-height: 1.5;
+      margin-bottom: 18px;
+    }
+  }
+
+  .auth-form {
+    gap: 14px;
+    margin-bottom: 16px;
+
+    .btn-auth-submit {
+      margin-top: 4px;
+      height: 44px;
+      font-size: 14px;
+    }
   }
 
   .settings-modal {
@@ -4316,7 +4378,7 @@ small {
   .footer-inner {
     grid-template-columns: 1fr;
     gap: 28px;
-    padding: 30px 16px;
+    padding: 30px 16px calc(76px + var(--safe-bottom, 0px));
   }
 
   /* MOBILE BOTTOM NAVIGATION DOCK (TAB BAR) */
