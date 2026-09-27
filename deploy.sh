@@ -112,6 +112,7 @@ WEB_PORT=80
 ENV
   mv -- "$temp_env" "$ENV_FILE"
   trap - EXIT
+fi
 chmod 600 "$ENV_FILE"
 
 if ! grep -q "^GOOGLE_CLIENT_ID=" "$ENV_FILE" 2>/dev/null; then
