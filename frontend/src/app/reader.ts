@@ -57,14 +57,14 @@ export interface SpeedLevel {
         <div class="reader-nav-controls" (click)="$event.stopPropagation()">
           <button class="btn-nav-chap" 
                   [disabled]="!previous()" 
-                  (click)="move(-1)" 
+                  (click)="scrollToTopInstant(); move(-1)" 
                   title="Chương trước (Phím ←)">
             <app-icon name="arrowLeft" style="width: 14px; height: 14px;"/>
             <span>Trước</span>
           </button>
 
           <div class="chap-select-wrap">
-            <select aria-label="Chọn chương" [ngModel]="r.chapter.id" (ngModelChange)="go($event)">
+            <select aria-label="Chọn chương" [ngModel]="r.chapter.id" (ngModelChange)="scrollToTopInstant(); go($event)">
               @for(c of r.navigation; track c.id){
                 <option [value]="c.id">{{ c.title }}</option>
               }
@@ -74,7 +74,7 @@ export interface SpeedLevel {
 
           <button class="btn-nav-chap btn-nav-next" 
                   [disabled]="!next()" 
-                  (click)="move(1)" 
+                  (click)="scrollToTopInstant(); move(1)" 
                   title="Chương sau (Phím →)">
             <span>Sau</span>
             <app-icon name="arrowRight" style="width: 14px; height: 14px;"/>
@@ -287,12 +287,12 @@ export interface SpeedLevel {
       </p>
 
       <div class="bottom-nav-row">
-        <button class="btn-nav-chap" [disabled]="!previous()" (click)="move(-1)">
+        <button class="btn-nav-chap" [disabled]="!previous()" (click)="scrollToTopInstant(); move(-1)">
           <app-icon name="arrowLeft" style="width: 14px; height: 14px;"/> <span>Chương trước</span>
         </button>
 
         <div class="chap-select-wrap">
-          <select aria-label="Chọn chương kết thúc" [ngModel]="r.chapter.id" (ngModelChange)="go($event)">
+          <select aria-label="Chọn chương kết thúc" [ngModel]="r.chapter.id" (ngModelChange)="scrollToTopInstant(); go($event)">
             @for(c of r.navigation; track c.id){
               <option [value]="c.id">{{ c.title }}</option>
             }
@@ -300,7 +300,7 @@ export interface SpeedLevel {
           <app-icon name="chevron" class="select-arrow"/>
         </div>
 
-        <button class="btn-nav-chap btn-nav-next primary" [disabled]="!next()" (click)="move(1)">
+        <button class="btn-nav-chap btn-nav-next primary" [disabled]="!next()" (click)="scrollToTopInstant(); move(1)">
           <span>Chương sau</span> <app-icon name="arrowRight" style="width: 14px; height: 14px;"/>
         </button>
       </div>
@@ -317,19 +317,19 @@ export interface SpeedLevel {
 
     <!-- 4. MOBILE FLOATING QUICK BAR (Visible when controls active) -->
     <div class="reader-mobile-floating-bar glass-panel" [class.is-hidden]="isHeaderHidden && !isPinned" (click)="$event.stopPropagation()">
-      <button class="btn-float-action" [disabled]="!previous()" (click)="move(-1)" aria-label="Chương trước">
+      <button class="btn-float-action" [disabled]="!previous()" (click)="scrollToTopInstant(); move(-1)" aria-label="Chương trước">
         <app-icon name="arrowLeft"/>
       </button>
       
       <div class="float-chap-info">
-        <select aria-label="Chọn chương nhanh" [ngModel]="r.chapter.id" (ngModelChange)="go($event)">
+        <select aria-label="Chọn chương nhanh" [ngModel]="r.chapter.id" (ngModelChange)="scrollToTopInstant(); go($event)">
           @for(c of r.navigation; track c.id){
             <option [value]="c.id">{{ c.title }}</option>
           }
         </select>
       </div>
 
-      <button class="btn-float-action btn-float-next" [disabled]="!next()" (click)="move(1)" aria-label="Chương sau">
+      <button class="btn-float-action btn-float-next" [disabled]="!next()" (click)="scrollToTopInstant(); move(1)" aria-label="Chương sau">
         <app-icon name="arrowRight"/>
       </button>
     </div>
@@ -484,6 +484,7 @@ export class Reader implements OnInit, OnDestroy {
       this.id = p.get('id')!;
       this.singlePageIndex.set(0);
       this.stopAutoScroll();
+      this.scrollToTopInstant();
       void this.load();
     });
   }
@@ -527,6 +528,7 @@ export class Reader implements OnInit, OnDestroy {
     this.fallbackUrls.set(new Map());
     this.preloadedUrls.clear();
     this.preloadedNextId = '';
+    this.scrollToTopInstant();
 
     try {
       const r = await this.api.request<ReaderData>('/chapters/' + this.id, 'GET', undefined, true);
@@ -536,12 +538,13 @@ export class Reader implements OnInit, OnDestroy {
         this.titleService.setTitle(`${r.manga.title} - ${r.chapter.title} | AkaTruyen`);
       }
       void this.store.record(r).catch(e => this.store.notify(message(e)));
-      window.scrollTo(0, 0);
+      this.scrollToTopInstant();
       this.preloadUpcoming(0, 4);
     } catch (e) {
       if (n === this.epoch) this.error.set(message(e));
     } finally {
       if (n === this.epoch) this.loading.set(false);
+      this.scrollToTopInstant();
     }
   }
 
@@ -557,6 +560,9 @@ export class Reader implements OnInit, OnDestroy {
 
   onLoaded(i: number): void {
     this.loaded.update(s => new Set(s).add(i));
+    if (i === 0 && typeof window !== 'undefined' && window.scrollY > 40) {
+      this.scrollToTopInstant();
+    }
     this.preloadUpcoming(i + 1, 3);
     const total = this.pages().length;
     if (total > 0 && i >= total - 4) {
@@ -611,12 +617,16 @@ export class Reader implements OnInit, OnDestroy {
   }
 
   go(id: string): void {
+    this.scrollToTopInstant();
     void this.router.navigate(['/chuong', id]);
   }
 
   move(direction: number): void {
     const c = direction < 0 ? this.previous() : this.next();
-    if (c) this.go(c.id);
+    if (c) {
+      this.scrollToTopInstant();
+      this.go(c.id);
+    }
   }
 
   imageError(i: number): void {
@@ -806,6 +816,40 @@ export class Reader implements OnInit, OnDestroy {
 
   scrollToTop(): void {
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  scrollToTopInstant(): void {
+    if (typeof window === 'undefined') return;
+    try {
+      if ('scrollRestoration' in history) {
+        history.scrollRestoration = 'manual';
+      }
+    } catch { }
+
+    const docEl = document.documentElement;
+    const prevScrollBehavior = docEl ? docEl.style.scrollBehavior : '';
+    if (docEl) docEl.style.scrollBehavior = 'auto';
+
+    const performScroll = () => {
+      window.scrollTo(0, 0);
+      try {
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+      } catch { }
+      if (document.documentElement) document.documentElement.scrollTop = 0;
+      if (document.body) document.body.scrollTop = 0;
+      const el = document.querySelector('.reader-container');
+      if (el) el.scrollTop = 0;
+    };
+
+    performScroll();
+    requestAnimationFrame(() => {
+      performScroll();
+      if (docEl) docEl.style.scrollBehavior = prevScrollBehavior;
+    });
+
+    setTimeout(performScroll, 30);
+    setTimeout(performScroll, 100);
+    setTimeout(performScroll, 250);
   }
 
   onReaderClick(e: MouseEvent): void {
