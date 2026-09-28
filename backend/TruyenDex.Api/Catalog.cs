@@ -610,15 +610,28 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             try
             {
                 var result = await Get(path);
-                var rawItems = result["data"]!.AsArray().Select(x => Map(x!, isThumbnail: true)).ToList();
+                var rawItems = new List<MangaCard>();
+                if (result["data"]?.AsArray() is { } dataArr)
+                {
+                    foreach (var x in dataArr)
+                    {
+                        if (x == null) continue;
+                        try { rawItems.Add(Map(x, isThumbnail: true)); } catch { }
+                    }
+                }
                 var statsTask = Stats(rawItems);
                 var chapsTask = PopulateMangaDexChapters(rawItems, language);
                 try { await Task.WhenAll(statsTask, chapsTask); } catch { }
                 var mdTotal = Math.Min((int?)result["total"] ?? 0, 10000);
                 return (rawItems, mdTotal);
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine($"[Catalog.Search] MangaDex upstream warning: {ex.Message}");
+                if (ex is UpstreamException && string.IsNullOrWhiteSpace(q))
+                {
+                    throw;
+                }
                 return (new List<MangaCard>(), 0);
             }
         });
@@ -688,7 +701,9 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
         if (items.Count > 0)
         {
-            try { await EnsureTopChapters(items, 3); } catch { }
+            _ = Task.Run(async () => {
+                try { await EnsureTopChapters(items.Take(8).ToList(), 3); } catch { }
+            });
             var res = new CatalogPage(items, total, page, size);
             await CacheSet(cacheKey, res, TimeSpan.FromMinutes(5));
 

@@ -64,7 +64,7 @@ import { Sidebar } from './sidebar';
 <div class="columns">
   <section class="main-content-section">
     <div class="section-title">
-      <div><span class="eyebrow">CHƯƠNG MỚI MỖI NGÀY</span><h2>Mới cập nhật <span class="update-dot"></span></h2></div>
+      <div><span class="eyebrow">CHƯƠNG MỚI MỖI NGÀY</span><h2>Manga mới cập nhật <span class="update-dot"></span></h2></div>
       <a class="filter-shortcut-btn" routerLink="/tim-truyen-nang-cao" aria-label="Lọc truyện nâng cao">
         <app-icon name="filter"/>
         <span class="btn-text">Bộ lọc</span>

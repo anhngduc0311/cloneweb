@@ -188,14 +188,27 @@ export class Search {
     });
   }
 
+  cleanParams(page: number) {
+    const qp: Record<string, string | number> = {};
+    for (const [key, val] of Object.entries(this.form)) {
+      if (val !== '' && val !== undefined && val !== null && key !== 'page') {
+        qp[key] = val;
+      }
+    }
+    if (page > 1) {
+      qp['page'] = page;
+    }
+    return qp;
+  }
+
   submit() {
-    void this.router.navigate(['/tim-truyen-nang-cao'], { queryParams: { ...this.form, page: 1 } });
+    void this.router.navigate(['/tim-truyen-nang-cao'], { queryParams: this.cleanParams(1) });
   }
 
   reset() {
     this.api.clearCache('/catalog/search');
     this.form = this.defaults();
-    this.submit();
+    void this.router.navigate(['/tim-truyen-nang-cao']);
   }
 
   getPath(p: number) {
@@ -221,7 +234,7 @@ export class Search {
 
   goPage = (page: number) => {
     this.prefetchPage(page);
-    void this.router.navigate([], { relativeTo: this.route, queryParams: { ...this.form, page } });
+    void this.router.navigate([], { relativeTo: this.route, queryParams: this.cleanParams(page) });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
