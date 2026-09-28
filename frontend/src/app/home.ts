@@ -8,21 +8,13 @@ import { Sidebar } from './sidebar';
   selector: 'app-home',
   imports: [RouterLink, Icon, MangaCardComponent, Pagination, Sidebar],
   template: `
-<section class="discovery-intro">
-  <div>
-    <span class="eyebrow">AKATRUYEN · WEBSITE ĐỌC TRUYỆN TRANH ONLINE</span>
-    <h1>AkaTruyen<br><span>Kho truyện tranh đặc sắc</span></h1>
-    <p>Khám phá hàng ngàn bộ Manga, Manhwa, Manhua tuyển chọn tiếng Việt cập nhật mới nhất tại AkaTruyen.</p>
-  </div>
-  <a class="discover-link" routerLink="/tim-truyen-nang-cao">Khám phá truyện <app-icon name="arrowRight"/></a>
-</section>
 <section class="recommendations"
          (mouseenter)="pauseAutoSlide()"
          (mouseleave)="resumeAutoSlide()"
          (touchstart)="pauseAutoSlide()"
          (touchend)="resumeAutoSlide()">
   <div class="section-title">
-    <div><span class="eyebrow">ĐÁNG ĐỂ KHÁM PHÁ</span><h2>Truyện Manhwa mới</h2></div>
+    <div><span class="eyebrow">ĐÁNG ĐỂ KHÁM PHÁ</span><h1>Truyện Manhwa mới</h1></div>
     <a class="view-all-manhwa-link" routerLink="/tim-truyen-nang-cao" [queryParams]="{country:'ko'}">
       <span class="desktop-text">Xem tất cả</span>
       <span class="mobile-text">Tất cả Manhwa</span>
