@@ -74,19 +74,21 @@ object Session(AppUser u) {
     return new { token = new JwtSecurityTokenHandler().WriteToken(jwt), user = new { u.Id, u.Name, u.Email, u.Role } };
 }
 async Task Remember(AppDb db, MangaCard m, MeilisearchClient? meili = null) {
-    await db.Database.ExecuteSqlInterpolatedAsync($"""
-        INSERT INTO "Mangas" ("Id","Title","AlternativeTitle","Author","Cover","Description","Genres","Status","Country","Demographic","Year","Featured","IsDemo","Views","UpdatedAt")
-        VALUES ({m.Id},{m.Title},{m.AlternativeTitle},{m.Author},{m.Cover},{m.Description},{m.Genres},{m.Status},{m.Country},{m.Demographic},{m.Year ?? 0},false,false,0,{m.UpdatedAt})
-        ON CONFLICT ("Id") DO UPDATE SET "Title"=EXCLUDED."Title", "Cover"=EXCLUDED."Cover", "UpdatedAt"=EXCLUDED."UpdatedAt"
-        """);
-    if (meili != null) {
-        _ = Task.Run(async () => {
-            try {
-                var index = meili.Index("mangas");
-                await index.AddDocumentsAsync(new[] { m });
-            } catch { }
-        });
-    }
+    try {
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "Mangas" ("Id","Title","AlternativeTitle","Author","Cover","Description","Genres","Status","Country","Demographic","Year","Featured","IsDemo","Views","UpdatedAt")
+            VALUES ({m.Id},{m.Title},{m.AlternativeTitle},{m.Author},{m.Cover},{m.Description},{m.Genres},{m.Status},{m.Country},{m.Demographic},{m.Year ?? 0},false,false,0,{m.UpdatedAt})
+            ON CONFLICT ("Id") DO UPDATE SET "Title"=EXCLUDED."Title", "Cover"=EXCLUDED."Cover", "UpdatedAt"=EXCLUDED."UpdatedAt"
+            """);
+        if (meili != null) {
+            _ = Task.Run(async () => {
+                try {
+                    var index = meili.Index("mangas");
+                    await index.AddDocumentsAsync(new[] { m });
+                } catch { }
+            });
+        }
+    } catch { }
 }
 app.MapGet("/api/health", async (AppDb db, IServiceProvider sp) => {
     var dbOk = await db.Database.CanConnectAsync();
@@ -122,6 +124,10 @@ app.MapPost("/api/auth/login", async (LoginRequest req, AppDb db, PasswordHasher
     if (req.Password is null || req.Password.Length > 128) return Results.BadRequest(new { message = "Thông tin đăng nhập không hợp lệ." });
     var email = (req.Email ?? "").Trim().ToLowerInvariant();
     var u = await db.Users.SingleOrDefaultAsync(x => x.Email == email);
+    if (u is null && email == "admin")
+    {
+        u = await db.Users.FirstOrDefaultAsync(x => x.Role == "admin");
+    }
     if (u is null || hasher.VerifyHashedPassword(u, u.PasswordHash, req.Password) == PasswordVerificationResult.Failed)
         return Results.Json(new { message = "Email hoặc mật khẩu không đúng." }, statusCode: 401);
     return Results.Ok(Session(u));
@@ -466,11 +472,22 @@ app.MapGet("/sitemap.xml", GenerateSitemap);
 using (var scope = app.Services.CreateScope()) {
     var db = scope.ServiceProvider.GetRequiredService<AppDb>();
     await db.Database.MigrateAsync();
-    var email = builder.Configuration["Seed:AdminEmail"]; var password = builder.Configuration["Seed:AdminPassword"];
-    if (!string.IsNullOrEmpty(email) && !string.IsNullOrEmpty(password) && !await db.Users.AnyAsync(x => x.Email == email)) {
-        var u = new AppUser { Email = email, Name = "Quản trị viên", Role = "admin" };
-        u.PasswordHash = scope.ServiceProvider.GetRequiredService<PasswordHasher<AppUser>>().HashPassword(u, password);
-        db.Users.Add(u); await db.SaveChangesAsync();
+    var email = (builder.Configuration["Seed:AdminEmail"] ?? "").Trim().ToLowerInvariant();
+    var password = builder.Configuration["Seed:AdminPassword"];
+    if (!string.IsNullOrEmpty(email) && !string.IsNullOrEmpty(password)) {
+        var hasher = scope.ServiceProvider.GetRequiredService<PasswordHasher<AppUser>>();
+        var u = await db.Users.FirstOrDefaultAsync(x => x.Email == email)
+             ?? await db.Users.FirstOrDefaultAsync(x => x.Role == "admin");
+        if (u == null) {
+            u = new AppUser { Email = email, Name = "Quản trị viên", Role = "admin" };
+            u.PasswordHash = hasher.HashPassword(u, password);
+            db.Users.Add(u);
+        } else {
+            u.Email = email;
+            u.Role = "admin";
+            u.PasswordHash = hasher.HashPassword(u, password);
+        }
+        await db.SaveChangesAsync();
     }
 }
 app.Run();

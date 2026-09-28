@@ -109,14 +109,47 @@ export class Api {
         return hit.data as T;
       }
     }
-    const token=sessionStorage.getItem('td-token');
-    const response=await fetch('/api'+path,{method,headers:{...(body!==undefined?{'Content-Type':'application/json'}:{}),...(token?{Authorization:`Bearer ${token}`}:{})},body:body!==undefined?JSON.stringify(body):undefined});
-    if(!response.ok){ let info; try{info=await response.json();}catch{} throw new Error(info?.message || (response.status===401?'Vui lòng đăng nhập để tiếp tục.':response.status===429?'Bạn thao tác quá nhanh. Vui lòng thử lại sau một phút.':'Không tải được dữ liệu. Vui lòng thử lại.')); }
-    const result = response.status===204?undefined as T:await response.json();
-    if (shouldCache) {
-      this.cache.set(path, { data: result, expiry: Date.now() + 15 * 60 * 1000 });
+    const token = sessionStorage.getItem('td-token');
+    const maxRetries = isGet ? 2 : 0;
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        if (attempt > 0) {
+          await new Promise(r => setTimeout(r, attempt * 800));
+        }
+        const response = await fetch('/api' + path, {
+          method,
+          headers: {
+            ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: body !== undefined ? JSON.stringify(body) : undefined
+        });
+
+        if (!response.ok) {
+          if (isGet && attempt < maxRetries && [500, 502, 503, 504].includes(response.status)) {
+            continue;
+          }
+          let info: any;
+          try { info = await response.json(); } catch { }
+          throw new Error(info?.message || (response.status === 401 ? 'Vui lòng đăng nhập để tiếp tục.' : response.status === 429 ? 'Bạn thao tác quá nhanh. Vui lòng thử lại sau một phút.' : 'Không tải được dữ liệu. Vui lòng thử lại.'));
+        }
+
+        const result = response.status === 204 ? undefined as T : await response.json();
+        if (shouldCache) {
+          this.cache.set(path, { data: result, expiry: Date.now() + 15 * 60 * 1000 });
+        }
+        return result;
+      } catch (err) {
+        lastError = err;
+        if (isGet && attempt < maxRetries && !(err instanceof Error && err.message.includes('đăng nhập'))) {
+          continue;
+        }
+        throw err;
+      }
     }
-    return result;
+    throw lastError;
   }
   query(params:Record<string,unknown>){const q=new URLSearchParams();Object.entries(params).forEach(([k,v])=>{if(v!==''&&v!==undefined&&v!==null)q.set(k,String(v));});return q.toString();}
 }

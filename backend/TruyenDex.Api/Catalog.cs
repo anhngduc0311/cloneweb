@@ -85,7 +85,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             {
                 try
                 {
-                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(7));
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                     using var response = await http.GetAsync(origin + path, cts.Token);
                     if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                         throw new UpstreamException("Không tìm thấy truyện hoặc chương ở nguồn.", 404);

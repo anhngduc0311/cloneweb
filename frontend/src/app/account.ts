@@ -43,8 +43,8 @@ import { Icon } from './ui';
       }
 
       <label>
-        <span>Địa chỉ Email</span>
-        <input type="email" name="email" [(ngModel)]="email" required maxlength="254" autocomplete="email" placeholder="name@example.com">
+        <span>{{register() ? 'Địa chỉ Email' : 'Email hoặc Tên tài khoản'}}</span>
+        <input [type]="register() ? 'email' : 'text'" name="email" [(ngModel)]="email" required maxlength="254" [autocomplete]="register() ? 'email' : 'username'" [placeholder]="register() ? 'name@example.com' : 'admin hoặc email'">
       </label>
 
       <label>

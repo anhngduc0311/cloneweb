@@ -105,8 +105,8 @@ POSTGRES_PASSWORD=$(random_hex 32)
 REDIS_PASSWORD=$(random_hex 32)
 MEILI_MASTER_KEY=$(random_hex 32)
 JWT_KEY=$(random_hex 48)
-ADMIN_EMAIL=admin@akatruyen.local
-ADMIN_PASSWORD=$(random_hex 24)aA!
+ADMIN_EMAIL=admin
+ADMIN_PASSWORD=admin123
 WEB_BIND=0.0.0.0
 WEB_PORT=80
 ENV
