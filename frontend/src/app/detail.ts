@@ -88,12 +88,6 @@ import { Sidebar } from './sidebar';
               <dd>{{countries[m.country] || m.country}}</dd>
               <dt>Độ tuổi</dt>
               <dd>{{m.contentRating === 'safe' ? 'Mọi lứa tuổi' : m.contentRating === 'suggestive' ? '16+' : '18+'}}</dd>
-              <dt>Nguồn</dt>
-              <dd>
-                <a [href]="m.author === 'TruyenGG' ? 'https://truyenggvn.com' : 'https://mangadex.org/title/' + m.id" target="_blank" rel="noopener noreferrer">
-                  {{m.author === 'TruyenGG' ? 'TruyenGG ↗' : 'MangaDex ↗'}}
-                </a>
-              </dd>
             </dl>
 
             <div class="tags">
@@ -142,9 +136,6 @@ import { Sidebar } from './sidebar';
               <a [routerLink]="['/chuong', c.id]" class="chapter-row" [class.is-read]="isChapterRead(c.id)">
                 <div class="chapter-main-info">
                   <span class="chapter-title-text">{{c.title}}</span>
-                  @if(c.group){
-                    <small class="chapter-group">{{c.group}}</small>
-                  }
                 </div>
                 <div class="chapter-meta-right">
                   <time>{{ago(c.publishedAt)}}</time>
