@@ -143,6 +143,12 @@
                 <a routerLink="/theo-doi" (click)="account.set(false)"><app-icon name="heart"/> Truyện theo dõi ({{store.follows().length}})</a>
                 <a routerLink="/lich-su" (click)="account.set(false)"><app-icon name="clock"/> Lịch sử đọc ({{store.history().length}})</a>
                 <button (click)="openSettings();account.set(false)"><app-icon name="settings"/> Tùy chỉnh đọc truyện</button>
+                @if(store.user()?.role === 'admin' || store.user()?.role === 'superadmin' || store.user()?.role === 'editor' || store.user()?.role === 'translator'){
+                  <div class="menu-divider"></div>
+                  <a routerLink="/admin" class="admin-menu-link" (click)="account.set(false)">
+                    <app-icon name="dashboard"/> <span>Quản trị hệ thống</span>
+                  </a>
+                }
                 <div class="menu-divider"></div>
                 <button class="logout-btn" (click)="store.logout();account.set(false)"><app-icon name="logout"/> Đăng xuất</button>
               }@else{
@@ -264,6 +270,13 @@
                 <span class="label">Lịch sử đọc</span>
               </a>
             </div>
+            @if(store.user()?.role === 'admin' || store.user()?.role === 'superadmin' || store.user()?.role === 'editor' || store.user()?.role === 'translator'){
+              <div class="drawer-admin-action">
+                <a routerLink="/admin" class="admin-drawer-btn" (click)="menu.set(false)">
+                  <app-icon name="dashboard"/> <span>Quản trị hệ thống</span>
+                </a>
+              </div>
+            }
           }@else{
             <div class="drawer-guest-card">
               <p>Đăng nhập để lưu lại tủ sách của bạn.</p>

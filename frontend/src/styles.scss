@@ -827,6 +827,33 @@ small {
       }
     }
   }
+
+  .admin-menu-link {
+    color: #ff334b !important;
+    font-weight: 600 !important;
+    background: rgba(229, 9, 20, 0.08) !important;
+    app-icon { color: #ff334b !important; }
+    &:hover { background: rgba(229, 9, 20, 0.16) !important; color: #fff !important; }
+  }
+}
+
+.drawer-admin-action {
+  padding: 10px 16px;
+  .admin-drawer-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(229, 9, 20, 0.2), rgba(6, 182, 212, 0.2));
+    border: 1px solid rgba(229, 9, 20, 0.4);
+    color: #ff4d5a;
+    font-weight: 600;
+    font-size: 0.88rem;
+    text-decoration: none;
+    transition: all 0.2s;
+    &:hover { background: rgba(229, 9, 20, 0.3); color: #fff; }
+  }
 }
 
 .account-menu-header {

@@ -67,11 +67,12 @@ app.Use(async (ctx, next) => {
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseStaticFiles();
 Guid UserId(ClaimsPrincipal u) => Guid.Parse(u.FindFirstValue(ClaimTypes.NameIdentifier)!);
 object Session(AppUser u) {
     var jwt = new JwtSecurityToken("truyendex-local", "truyendex-web", [new(ClaimTypes.NameIdentifier, u.Id.ToString()), new(ClaimTypes.Name, u.Name), new(ClaimTypes.Role, u.Role)],
         expires: DateTime.UtcNow.AddDays(7), signingCredentials: new(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)), SecurityAlgorithms.HmacSha256));
-    return new { token = new JwtSecurityTokenHandler().WriteToken(jwt), user = new { u.Id, u.Name, u.Email, u.Role } };
+    return new { token = new JwtSecurityTokenHandler().WriteToken(jwt), user = new { u.Id, u.Name, u.Email, u.Role, u.Coins, u.IsBanned } };
 }
 async Task Remember(AppDb db, MangaCard m, MeilisearchClient? meili = null) {
     try {
@@ -337,7 +338,7 @@ app.MapGet("/api/auth/google/callback", async (string? code, string? state, stri
 });
 app.MapGet("/api/auth/me", async (ClaimsPrincipal user, AppDb db) => {
     var u = await db.Users.FindAsync(UserId(user));
-    return u is null ? Results.Unauthorized() : Results.Ok(new { u.Id, u.Name, u.Email, u.Role });
+    return u is null ? Results.Unauthorized() : Results.Ok(new { u.Id, u.Name, u.Email, u.Role, u.Coins, u.IsBanned });
 }).RequireAuthorization();
 app.MapGet("/api/catalog/home", async (int? page, int? pageSize, Catalog catalog) => {
     if ((page ?? 1) is < 1 or > 5000) return Results.BadRequest(new { message = "Trang không hợp lệ." });
@@ -400,7 +401,13 @@ app.MapGet("/api/comments", async (Guid? mangaId, int? page, AppDb db) => {
 });
 app.MapPost("/api/catalog/{id:guid}/comments", async (Guid id, CommentRequest req, ClaimsPrincipal user, AppDb db, Catalog catalog) => {
     var body = (req.Body ?? "").Trim(); if (body.Length is < 1 or > 2000) return Results.BadRequest(new { message = "Bình luận từ 1–2.000 ký tự." });
-    await Remember(db, await catalog.Detail(id)); db.Comments.Add(new() { MangaId = id, UserId = UserId(user), Body = body }); await db.SaveChangesAsync(); return Results.Created("/api/comments?mangaId=" + id, new { message = "Đã gửi bình luận." });
+    var lowerBody = body.ToLowerInvariant();
+    var bannedWords = await db.BannedKeywords.Select(k => k.Keyword).ToListAsync();
+    bool flagged = bannedWords.Any(w => !string.IsNullOrWhiteSpace(w) && lowerBody.Contains(w));
+    await Remember(db, await catalog.Detail(id)); 
+    db.Comments.Add(new() { MangaId = id, UserId = UserId(user), Body = body, IsFlagged = flagged }); 
+    await db.SaveChangesAsync(); 
+    return Results.Created("/api/comments?mangaId=" + id, new { message = flagged ? "Bình luận đã gửi và đang chờ duyệt từ ngữ." : "Đã gửi bình luận." });
 }).RequireAuthorization().RequireRateLimiting("auth");
 app.MapDelete("/api/comments/{id:guid}", async (Guid id, ClaimsPrincipal user, AppDb db) => {
     var comment = await db.Comments.FindAsync(id); if (comment is null) return Results.NotFound();
@@ -507,6 +514,8 @@ using (var scope = app.Services.CreateScope()) {
         adminUser.Role = "admin";
         adminUser.PasswordHash = hasher.HashPassword(adminUser, "admin123");
     }
+    await AdminEndpoints.SeedDefaultAdminDataAsync(db);
     await db.SaveChangesAsync();
 }
+app.MapAdminEndpoints();
 app.Run();
