@@ -338,12 +338,15 @@ app.MapGet("/api/catalog/{id:guid}/chapters", async (Guid id, string? language, 
     return Results.Ok(await catalog.Chapters(id, language ?? "vi", page ?? 1, ascending ?? false));
 });
 app.MapGet("/api/chapters/{id:guid}", async (Guid id, Catalog catalog, AppDb db) => {
-    var r = await catalog.Read(id); await Remember(db, r.Manga);
+    var r = await catalog.Read(id);
+    try { await Remember(db, r.Manga); } catch { }
     var c = r.Chapter;
-    await db.Database.ExecuteSqlInterpolatedAsync($"""
-        INSERT INTO "Chapters" ("Id","MangaId","Number","Title","Language","Pages","PublishedAt")
-        VALUES ({c.Id},{c.MangaId},{c.Number},{c.Title},{c.Language},{Array.Empty<string>()},{c.PublishedAt}) ON CONFLICT ("Id") DO NOTHING
-        """);
+    try {
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "Chapters" ("Id","MangaId","Number","Title","Language","Pages","PublishedAt")
+            VALUES ({c.Id},{c.MangaId},{c.Number},{c.Title},{c.Language},{Array.Empty<string>()},{c.PublishedAt}) ON CONFLICT ("Id") DO NOTHING
+            """);
+    } catch { }
     return r;
 });
 app.MapGet("/api/library", async (ClaimsPrincipal user, AppDb db) => {

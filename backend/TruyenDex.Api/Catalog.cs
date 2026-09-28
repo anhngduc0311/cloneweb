@@ -37,7 +37,7 @@ public class UpstreamException(string message, int status = 502) : Exception(mes
 // Read-only adapter. Integrates MangaDex/TruyenDex and TruyenGGVN with title deduplication.
 public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, IConnectionMultiplexer? redis = null, MeilisearchClient? meili = null)
 {
-    private static readonly SemaphoreSlim Gate = new(1, 1);
+    private static readonly SemaphoreSlim Gate = new(6, 6);
     private static readonly string[] SiteOrigins = ["https://api.truyendex.cc", "https://api.truyendex.xyz"];
     private static readonly string[] Origins = ["https://api-proxy.truyendex.cc/mangadex", "https://api-proxy.truyendex.xyz/mangadex", "https://api.mangadex.org"];
     private static string S(JsonNode? n) => n?.ToString() ?? "";
@@ -886,9 +886,10 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             catch { return new List<ChapterCard>(); }
         });
 
-        await Task.WhenAll(detailTask, navTask);
+        var timeoutTask = Task.Delay(4000);
+        await Task.WhenAll(detailTask, Task.WhenAny(navTask, timeoutTask));
         var m = await detailTask;
-        var navigation = await navTask;
+        var navigation = navTask.IsCompletedSuccessfully ? await navTask : new List<ChapterCard>();
 
         if (navigation.Count == 0)
         {
