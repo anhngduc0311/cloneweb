@@ -1,7 +1,7 @@
 import { Component, inject, signal, AfterViewInit, OnDestroy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { Store, message, ago } from './core';
+import { Store, message, ago, setStoredToken } from './core';
 import { Icon } from './ui';
 
 @Component({
@@ -111,7 +111,7 @@ export class Auth implements AfterViewInit, OnDestroy {
 
     const token = this.route.snapshot.queryParamMap.get('token');
     if (token) {
-      sessionStorage.setItem('td-token', token);
+      setStoredToken(token);
       this.busy.set(true);
       void this.store.restore().then(() => {
         this.store.notify('Đăng nhập Google thành công!');
@@ -120,6 +120,12 @@ export class Auth implements AfterViewInit, OnDestroy {
         this.error.set(message(e));
       }).finally(() => {
         this.busy.set(false);
+      });
+    } else {
+      void this.store.ensureRestored().then(user => {
+        if (user && !err) {
+          void this.router.navigateByUrl(this.returnUrl);
+        }
       });
     }
 

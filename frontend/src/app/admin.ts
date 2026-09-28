@@ -253,22 +253,27 @@ export class AdminComponent implements OnInit {
   ago = ago;
   Math = Math;
 
-  ngOnInit() {
-    this.checkPermission();
-    void this.loadOverview();
+  async ngOnInit() {
+    const ok = await this.checkPermission();
+    if (ok) {
+      void this.loadOverview();
+    }
   }
 
-  checkPermission() {
+  async checkPermission(): Promise<boolean> {
+    await this.store.ensureRestored();
     const u = this.store.user();
     if (!u) {
       void this.router.navigate(['/dang-nhap'], { queryParams: { returnUrl: '/admin' } });
-      return;
+      return false;
     }
     const staffRoles = ['admin', 'superadmin', 'editor', 'translator'];
     if (!staffRoles.includes(u.role)) {
       this.store.notify('Bạn không có quyền truy cập trang quản trị.');
       void this.router.navigate(['/']);
+      return false;
     }
+    return true;
   }
 
   isFullAdmin(): boolean {
@@ -547,7 +552,7 @@ export class AdminComponent implements OnInit {
 
     this.uploadingImages.set(true);
     try {
-      const token = sessionStorage.getItem('td-token');
+      const token = this.store.getToken();
       const formData = new FormData();
       for (let i = 0; i < input.files.length; i++) {
         formData.append('files', input.files[i]);

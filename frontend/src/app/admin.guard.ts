@@ -2,16 +2,21 @@ import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
 import { Store } from './core';
 
-export const adminGuard: CanActivateFn = () => {
+export const adminGuard: CanActivateFn = async () => {
   const store = inject(Store);
   const router = inject(Router);
+
+  await store.ensureRestored();
+
   const u = store.user();
   if (u && ['admin', 'superadmin', 'editor', 'translator'].includes(u.role)) {
     return true;
   }
-  if (typeof window !== 'undefined' && sessionStorage.getItem('td-token')) {
-    return true;
+
+  if (!u) {
+    return router.createUrlTree(['/dang-nhap'], { queryParams: { returnUrl: '/admin' } });
   }
-  void router.navigate(['/dang-nhap'], { queryParams: { returnUrl: '/admin' } });
-  return false;
+
+  store.notify('Bạn không có quyền truy cập trang quản trị.');
+  return router.createUrlTree(['/']);
 };
