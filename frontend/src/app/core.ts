@@ -138,7 +138,11 @@ export class Api {
 
         const result = response.status === 204 ? undefined as T : await response.json();
         if (shouldCache) {
-          this.cache.set(path, { data: result, expiry: Date.now() + 15 * 60 * 1000 });
+          const isSearch = path.startsWith('/catalog/search');
+          const isEmpty = result && typeof result === 'object' && 'items' in (result as any) && Array.isArray((result as any).items) && (result as any).items.length === 0;
+          if (!isSearch || !isEmpty) {
+            this.cache.set(path, { data: result, expiry: Date.now() + 15 * 60 * 1000 });
+          }
         }
         return result;
       } catch (err) {

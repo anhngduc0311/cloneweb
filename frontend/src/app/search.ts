@@ -193,6 +193,7 @@ export class Search {
   }
 
   reset() {
+    this.api.clearCache('/catalog/search');
     this.form = this.defaults();
     this.submit();
   }

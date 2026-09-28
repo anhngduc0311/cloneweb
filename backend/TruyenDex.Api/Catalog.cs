@@ -611,7 +611,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             {
                 var result = await Get(path);
                 var rawItems = result["data"]!.AsArray().Select(x => Map(x!, isThumbnail: true)).ToList();
-                await Stats(rawItems);
+                try { await Stats(rawItems); } catch { }
                 var mdTotal = Math.Min((int?)result["total"] ?? 0, 10000);
                 return (rawItems, mdTotal);
             }
@@ -684,21 +684,27 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
         if (total < items.Count) total = items.Count;
 
-        await EnsureTopChapters(items, 3);
-        var res = new CatalogPage(items, total, page, size);
-        await CacheSet(cacheKey, res, TimeSpan.FromMinutes(5));
-
-        if (meili != null && items.Count > 0)
+        if (items.Count > 0)
         {
             _ = Task.Run(async () => {
-                try {
-                    var index = meili.Index("mangas");
-                    await index.AddDocumentsAsync(items);
-                } catch { }
+                try { await EnsureTopChapters(items.Take(8).ToList(), 3); } catch { }
             });
+            var res = new CatalogPage(items, total, page, size);
+            await CacheSet(cacheKey, res, TimeSpan.FromMinutes(5));
+
+            if (meili != null)
+            {
+                _ = Task.Run(async () => {
+                    try {
+                        var index = meili.Index("mangas");
+                        await index.AddDocumentsAsync(items);
+                    } catch { }
+                });
+            }
+            return res;
         }
 
-        return res;
+        return new CatalogPage(items, total, page, size);
     }
 
     public async Task<MangaCard> Detail(Guid id)
