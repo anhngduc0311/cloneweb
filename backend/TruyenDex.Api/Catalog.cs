@@ -565,7 +565,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
     public async Task<CatalogPage> Search(int page, int size, string? q, string? genre, string? status, string? country, string? demographic, string? language, string? sort, int? year)
     {
-        var cacheKey = $"catalog:search:v8:{page}:{size}:{q}:{genre}:{status}:{country}:{demographic}:{language}:{sort}:{year}";
+        var cacheKey = $"catalog:search:v10:{page}:{size}:{q}:{genre}:{status}:{country}:{demographic}:{language}:{sort}:{year}";
         var cachedSearch = await CacheGet<CatalogPage>(cacheKey);
         if (cachedSearch != null)
         {
@@ -611,7 +611,9 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             {
                 var result = await Get(path);
                 var rawItems = result["data"]!.AsArray().Select(x => Map(x!, isThumbnail: true)).ToList();
-                try { await Stats(rawItems); } catch { }
+                var statsTask = Stats(rawItems);
+                var chapsTask = PopulateMangaDexChapters(rawItems, language);
+                try { await Task.WhenAll(statsTask, chapsTask); } catch { }
                 var mdTotal = Math.Min((int?)result["total"] ?? 0, 10000);
                 return (rawItems, mdTotal);
             }
@@ -686,9 +688,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
         if (items.Count > 0)
         {
-            _ = Task.Run(async () => {
-                try { await EnsureTopChapters(items.Take(8).ToList(), 3); } catch { }
-            });
+            try { await EnsureTopChapters(items, 3); } catch { }
             var res = new CatalogPage(items, total, page, size);
             await CacheSet(cacheKey, res, TimeSpan.FromMinutes(5));
 
@@ -705,6 +705,44 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         }
 
         return new CatalogPage(items, total, page, size);
+    }
+
+    private async Task PopulateMangaDexChapters(List<MangaCard> items, string? language)
+    {
+        if (items.Count == 0) return;
+        try
+        {
+            var targetLang = language == "en" ? "en" : "vi";
+            var ids = items.Select(x => x.Id.ToString()).Distinct().ToList();
+            var chapPath = $"/chapter?limit=100&translatedLanguage[]={targetLang}&order[readableAt]=desc&" + string.Join("&", ids.Select(id => "manga[]=" + id));
+            var res = await Get(chapPath);
+            var data = res["data"]?.AsArray();
+            if (data != null && data.Count > 0)
+            {
+                var mapped = new List<ChapterCard>();
+                foreach (var c in data)
+                {
+                    try
+                    {
+                        mapped.Add(MapChapter(c!));
+                    }
+                    catch { }
+                }
+
+                var chapGroups = mapped
+                    .GroupBy(c => c.MangaId)
+                    .ToDictionary(g => g.Key, g => DeduplicateChapters(g.ToList(), ascending: false).Take(3).ToList());
+
+                foreach (var m in items)
+                {
+                    if (chapGroups.TryGetValue(m.Id, out var chaps))
+                    {
+                        m.Chapters = chaps;
+                    }
+                }
+            }
+        }
+        catch { }
     }
 
     public async Task<MangaCard> Detail(Guid id)
@@ -730,11 +768,13 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
     private ChapterCard MapChapter(JsonNode c)
     {
         var a = c["attributes"]!;
-        var rel = c["relationships"]!.AsArray();
+        var rel = c["relationships"]?.AsArray() ?? [];
         decimal.TryParse(S(a["chapter"]), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var num);
         var chapter = S(a["chapter"]);
         var title = S(a["title"]);
-        return new(Guid.Parse(S(c["id"])), Guid.Parse(S(rel.First(x => S(x?["type"]) == "manga")?["id"])),
+        var mangaRel = rel.FirstOrDefault(x => S(x?["type"]) == "manga");
+        var mangaId = mangaRel != null ? Guid.Parse(S(mangaRel["id"])) : Guid.Empty;
+        return new(Guid.Parse(S(c["id"])), mangaId,
             (chapter.Length > 0 ? "Chương " + chapter : "Oneshot") + (title.Length > 0 ? " · " + title : ""), num,
             S(a["translatedLanguage"]), Date(a["publishAt"]), S(rel.FirstOrDefault(x => S(x?["type"]) == "scanlation_group")?["attributes"]?["name"]));
     }

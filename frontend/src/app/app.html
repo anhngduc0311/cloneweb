@@ -315,7 +315,7 @@
           @if(genresOpen()){
             <div class="drawer-genre-pills">
               @for(t of tags(); track t.id){
-                <a routerLink="/tim-truyen-nang-cao" [queryParams]="{genre:t.id}" (click)="menu.set(false)">{{t.name}}</a>
+                <a routerLink="/tim-truyen-nang-cao" [queryParams]="{genre:t.id}" (click)="menu.set(false)" [class.tag-romance]="t.name.toLowerCase() === 'romance'">{{t.name}}</a>
               }
               @if(!tags().length){
                 <p class="muted">Đang tải thể loại…</p>
@@ -371,7 +371,7 @@
         </div>
         <div class="genre-tags-grid">
           @for(t of tags(); track t.id){
-            <a routerLink="/tim-truyen-nang-cao" [queryParams]="{genre:t.id}" (click)="genresOpen.set(false)">{{t.name}}</a>
+            <a routerLink="/tim-truyen-nang-cao" [queryParams]="{genre:t.id}" (click)="genresOpen.set(false)" [class.tag-romance]="t.name.toLowerCase() === 'romance'">{{t.name}}</a>
           }
         </div>
         @if(!tags().length){

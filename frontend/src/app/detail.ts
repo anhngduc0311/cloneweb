@@ -92,7 +92,7 @@ import { Sidebar } from './sidebar';
 
             <div class="tags">
               @for(g of m.genres; track g){
-                <button class="tag-pill" (click)="findGenre(g)">{{g}}</button>
+                <button class="tag-pill" [class.tag-romance]="g.toLowerCase() === 'romance'" (click)="findGenre(g)">{{g}}</button>
               }
             </div>
           </div>

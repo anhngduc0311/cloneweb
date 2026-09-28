@@ -1429,6 +1429,68 @@ small {
   }
 }
 
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.view-all-manhwa-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  padding: 6px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  text-decoration: none;
+  white-space: nowrap;
+
+  .mobile-text {
+    display: none;
+  }
+
+  .desktop-text {
+    display: inline;
+  }
+
+  app-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--accent);
+    transition: transform 0.2s ease;
+  }
+
+  &:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+    box-shadow: 0 3px 12px rgba(255, 122, 0, 0.25);
+
+    app-icon {
+      transform: translateX(3px);
+    }
+  }
+
+  @media (max-width: 640px) {
+    font-size: 11.5px;
+    padding: 5px 8px;
+    gap: 4px;
+
+    .desktop-text {
+      display: none;
+    }
+
+    .mobile-text {
+      display: inline;
+    }
+  }
+}
+
 .carousel-controls {
   display: flex;
   gap: 6px;
@@ -1481,6 +1543,18 @@ small {
   scroll-snap-align: start;
   box-shadow: var(--shadow-sm);
   transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+  animation: featuredCardEnter 0.35s ease-out;
+
+@keyframes featuredCardEnter {
+  from {
+    opacity: 0.8;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
 
   img {
     width: 100%;
@@ -5017,5 +5091,25 @@ small {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* ==========================================================================
+   ROMANCE GENRE HIGHLIGHT (BÔI ĐỎ THỂ LOẠI ROMANCE)
+   ========================================================================== */
+.tag-romance,
+a.tag-romance,
+button.tag-romance,
+span.tag-romance {
+  color: #ff4d6d !important;
+  border-color: rgba(255, 77, 109, 0.45) !important;
+  background: rgba(255, 77, 109, 0.12) !important;
+  font-weight: 600 !important;
+
+  &:hover {
+    color: #ffffff !important;
+    border-color: #ff4d6d !important;
+    background: #ff4d6d !important;
+    box-shadow: 0 0 12px rgba(255, 77, 109, 0.45) !important;
   }
 }

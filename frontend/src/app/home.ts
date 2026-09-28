@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Api, Manga, Page, message } from './core';
 import { Icon, MangaCardComponent, Pagination } from './ui';
@@ -16,13 +16,18 @@ import { Sidebar } from './sidebar';
   </div>
   <a class="discover-link" routerLink="/tim-truyen-nang-cao">Khám phá truyện <app-icon name="arrowRight"/></a>
 </section>
-<section class="recommendations">
+<section class="recommendations"
+         (mouseenter)="pauseAutoSlide()"
+         (mouseleave)="resumeAutoSlide()"
+         (touchstart)="pauseAutoSlide()"
+         (touchend)="resumeAutoSlide()">
   <div class="section-title">
-    <div><span class="eyebrow">ĐÁNG ĐỂ KHÁM PHÁ</span><h2>Truyện nổi bật</h2></div>
-    <div class="carousel-controls">
-      <button aria-label="Đề cử trước" [disabled]="!pool().length" (click)="rotate(-1)">‹</button>
-      <button aria-label="Đề cử tiếp" [disabled]="!pool().length" (click)="rotate(1)">›</button>
-    </div>
+    <div><span class="eyebrow">ĐÁNG ĐỂ KHÁM PHÁ</span><h2>Truyện Manhwa mới</h2></div>
+    <a class="view-all-manhwa-link" routerLink="/tim-truyen-nang-cao" [queryParams]="{country:'ko'}">
+      <span class="desktop-text">Xem tất cả</span>
+      <span class="mobile-text">Tất cả Manhwa</span>
+      <app-icon name="arrowRight"/>
+    </a>
   </div>
   
   <div class="featured-carousel-track">
@@ -109,7 +114,7 @@ import { Sidebar } from './sidebar';
 </div>
 `
 })
-export class Home {
+export class Home implements OnDestroy {
   api = inject(Api);
   route = inject(ActivatedRoute);
   router = inject(Router);
@@ -126,6 +131,8 @@ export class Home {
   skeletons = Array.from({ length: 12 }, (_, i) => i);
   offset = 0;
   epoch = 0;
+  private autoSlideTimer?: ReturnType<typeof setInterval>;
+  isPaused = false;
 
   constructor() {
     this.route.queryParamMap.subscribe(p => {
@@ -133,6 +140,10 @@ export class Home {
       void this.load();
     });
     void this.loadFeatured();
+  }
+
+  ngOnDestroy() {
+    this.stopAutoSlide();
   }
 
   savePosition(id?: string) {
@@ -183,9 +194,40 @@ export class Home {
       if (r.items && r.items.length) {
         this.pool.set(r.items);
         this.rotate(0);
+        this.startAutoSlide();
       }
     } catch { this.featuredError.set(true); }
     finally { this.featuredLoading.set(false); }
+  }
+
+  startAutoSlide() {
+    this.stopAutoSlide();
+    if (typeof window === 'undefined') return;
+    this.autoSlideTimer = setInterval(() => {
+      if (!this.isPaused && this.pool().length > 1 && !document.hidden) {
+        this.rotate(1);
+      }
+    }, 3500);
+  }
+
+  stopAutoSlide() {
+    if (this.autoSlideTimer) {
+      clearInterval(this.autoSlideTimer);
+      this.autoSlideTimer = undefined;
+    }
+  }
+
+  pauseAutoSlide() {
+    this.isPaused = true;
+  }
+
+  resumeAutoSlide() {
+    this.isPaused = false;
+  }
+
+  manualRotate(step: number) {
+    this.rotate(step);
+    this.startAutoSlide();
   }
 
   coverFallback(event: Event) {
