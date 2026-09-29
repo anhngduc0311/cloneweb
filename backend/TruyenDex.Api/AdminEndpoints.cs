@@ -185,7 +185,7 @@ public static class AdminEndpoints
         });
 
         // 2. MANGA MANAGEMENT (CRUD)
-        admin.MapGet("/mangas", async (int? page, int? pageSize, string? q, string? status, string? sourceType, string? visibility, AppDb db) =>
+        admin.MapGet("/mangas", async (int? page, int? pageSize, string? q, string? status, string? sourceType, string? visibility, AppDb db, Catalog catalog) =>
         {
             var p = Math.Max(1, page ?? 1);
             var size = Math.Clamp(pageSize ?? 15, 1, 100);
@@ -222,7 +222,7 @@ public static class AdminEndpoints
             }
 
             var total = await query.CountAsync();
-            var items = await query
+            var rawItems = await query
                 .OrderByDescending(m => m.UpdatedAt)
                 .Skip((p - 1) * size)
                 .Take(size)
@@ -242,10 +242,53 @@ public static class AdminEndpoints
                     m.Views,
                     m.Country,
                     m.Genres,
-                    chaptersCount = m.Chapters.Count,
+                    localChaptersCount = m.Chapters.Count,
                     m.UpdatedAt
                 })
                 .ToListAsync();
+
+            var itemsTasks = rawItems.Select(async m =>
+            {
+                var count = m.localChaptersCount;
+                if (count <= 2)
+                {
+                    try
+                    {
+                        var chaps = await catalog.GetAllChapters(m.Id, "vi");
+                        if (chaps == null || chaps.Count == 0)
+                        {
+                            chaps = await catalog.GetAllChapters(m.Id, "en");
+                        }
+                        if (chaps != null && chaps.Count > count)
+                        {
+                            count = chaps.Count;
+                        }
+                    }
+                    catch { }
+                }
+
+                return new
+                {
+                    m.Id,
+                    m.Title,
+                    m.AlternativeTitle,
+                    m.Author,
+                    m.Artist,
+                    m.Cover,
+                    m.Status,
+                    m.SourceType,
+                    m.IsHidden,
+                    m.IsDraft,
+                    m.Featured,
+                    m.Views,
+                    m.Country,
+                    m.Genres,
+                    chaptersCount = count,
+                    m.UpdatedAt
+                };
+            });
+
+            var items = await Task.WhenAll(itemsTasks);
 
             return Results.Ok(new { items, total, page = p, pageSize = size });
         });
@@ -409,10 +452,50 @@ public static class AdminEndpoints
         });
 
         // 3. CHAPTER MANAGEMENT
-        admin.MapGet("/mangas/{mangaId:guid}/chapters", async (Guid mangaId, AppDb db) =>
+        admin.MapGet("/mangas/{mangaId:guid}/chapters", async (Guid mangaId, AppDb db, Catalog catalog) =>
         {
-            var chapters = await db.Chapters
+            var localChapters = await db.Chapters
                 .Where(c => c.MangaId == mangaId)
+                .OrderByDescending(c => c.Number)
+                .ToListAsync();
+
+            try
+            {
+                var externalChapters = await catalog.GetAllChapters(mangaId, "vi");
+                if (externalChapters == null || externalChapters.Count == 0)
+                {
+                    externalChapters = await catalog.GetAllChapters(mangaId, "en");
+                }
+
+                if (externalChapters != null && externalChapters.Count > 0)
+                {
+                    var existingIds = new HashSet<Guid>(localChapters.Select(c => c.Id));
+                    var existingNumbers = new HashSet<decimal>(localChapters.Select(c => c.Number));
+
+                    foreach (var ext in externalChapters)
+                    {
+                        if (!existingIds.Contains(ext.Id) && !existingNumbers.Contains(ext.Number))
+                        {
+                            localChapters.Add(new Chapter
+                            {
+                                Id = ext.Id,
+                                MangaId = mangaId,
+                                Number = ext.Number,
+                                Title = ext.Title,
+                                Language = ext.Language,
+                                ContentType = "comic",
+                                Pages = [],
+                                PublishedAt = ext.PublishedAt
+                            });
+                            existingIds.Add(ext.Id);
+                            existingNumbers.Add(ext.Number);
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            var chapters = localChapters
                 .OrderByDescending(c => c.Number)
                 .Select(c => new
                 {
@@ -430,32 +513,60 @@ public static class AdminEndpoints
                     pagesCount = c.Pages.Length,
                     hasContent = !string.IsNullOrWhiteSpace(c.Content)
                 })
-                .ToListAsync();
+                .ToList();
 
             return Results.Ok(chapters);
         });
 
-        admin.MapGet("/chapters/{id:guid}", async (Guid id, AppDb db) =>
+        admin.MapGet("/chapters/{id:guid}", async (Guid id, AppDb db, Catalog catalog) =>
         {
             var c = await db.Chapters.FindAsync(id);
-            if (c == null) return Results.NotFound(new { message = "Không tìm thấy chương." });
-
-            return Results.Ok(new
+            if (c != null)
             {
-                c.Id,
-                c.MangaId,
-                c.Number,
-                c.Title,
-                c.Language,
-                c.Pages,
-                c.Content,
-                c.ContentType,
-                c.IsLocked,
-                c.CoinPrice,
-                c.UnlockAt,
-                c.ScheduledPublishAt,
-                c.PublishedAt
-            });
+                return Results.Ok(new
+                {
+                    c.Id,
+                    c.MangaId,
+                    c.Number,
+                    c.Title,
+                    c.Language,
+                    c.Pages,
+                    c.Content,
+                    c.ContentType,
+                    c.IsLocked,
+                    c.CoinPrice,
+                    c.UnlockAt,
+                    c.ScheduledPublishAt,
+                    c.PublishedAt
+                });
+            }
+
+            try
+            {
+                var r = await catalog.Read(id);
+                if (r != null)
+                {
+                    return Results.Ok(new
+                    {
+                        Id = r.Chapter.Id,
+                        MangaId = r.Chapter.MangaId,
+                        Number = r.Chapter.Number,
+                        Title = r.Chapter.Title,
+                        Language = r.Chapter.Language,
+                        Pages = r.Pages,
+                        Content = (string?)null,
+                        ContentType = "comic",
+                        IsLocked = false,
+                        CoinPrice = 0,
+                        UnlockAt = (DateTime?)null,
+                        ScheduledPublishAt = (DateTime?)null,
+                        PublishedAt = r.Chapter.PublishedAt
+                    });
+                }
+            }
+            catch { }
+
+            return Results.NotFound(new { message = "Không tìm thấy chương." });
         });
 
         admin.MapPost("/mangas/{mangaId:guid}/chapters", async (Guid mangaId, AdminChapterRequest req, AppDb db) =>

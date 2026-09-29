@@ -203,6 +203,26 @@ export class AdminComponent implements OnInit {
   };
   uploadingImages = signal(false);
 
+  // Chapter Pagination & Search State
+  chapterPage = signal(1);
+  chapterPageSize = signal(20);
+  chapterSearchQuery = signal('');
+
+  getFilteredChaptersList(): AdminChapter[] {
+    const q = this.chapterSearchQuery().trim().toLowerCase();
+    const list = this.chapters();
+    if (!q) return list;
+    return list.filter(c => c.title.toLowerCase().includes(q) || String(c.number).includes(q));
+  }
+
+  getPagedChapters(): AdminChapter[] {
+    const filtered = this.getFilteredChaptersList();
+    const p = this.chapterPage();
+    const size = this.chapterPageSize();
+    if (size >= 9999) return filtered;
+    return filtered.slice((p - 1) * size, p * size);
+  }
+
   // Chapter Download State
   downloadModalOpen = signal(false);
   downloadRangeMode = signal<'range' | 'custom'>('range');
@@ -373,6 +393,25 @@ export class AdminComponent implements OnInit {
     }
   }
 
+  // Unified Pagination Helpers
+  getTotalPages(totalItems: number, pageSize: number = 15): number {
+    return Math.max(1, Math.ceil((totalItems || 0) / (pageSize || 15)));
+  }
+
+  getPageNumbers(currentPage: number, totalItems: number, pageSize: number = 15): (number | string)[] {
+    const total = this.getTotalPages(totalItems, pageSize);
+    if (total <= 7) {
+      return Array.from({ length: total }, (_, i) => i + 1);
+    }
+    if (currentPage <= 4) {
+      return [1, 2, 3, 4, 5, '...', total];
+    }
+    if (currentPage >= total - 3) {
+      return [1, '...', total - 4, total - 3, total - 2, total - 1, total];
+    }
+    return [1, '...', currentPage - 1, currentPage, currentPage + 1, '...', total];
+  }
+
   openCreateMangaModal() {
     this.mangaEditMode.set(false);
     this.currentManga = {
@@ -500,6 +539,8 @@ export class AdminComponent implements OnInit {
   async loadChapters(mangaId: string) {
     if (!mangaId) return;
     this.loading.set(true);
+    this.chapterPage.set(1);
+    this.chapterSearchQuery.set('');
     try {
       const res = await this.api.request<AdminChapter[]>(`/admin/mangas/${mangaId}/chapters`);
       this.chapters.set(res);

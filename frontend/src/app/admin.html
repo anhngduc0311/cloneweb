@@ -473,11 +473,42 @@
           <!-- Pagination -->
           @if(mangaTotal() > 15){
             <div class="pagination-bar">
-              <span class="page-info">Hiển thị {{(mangaPage() - 1) * 15 + 1}} - {{Math.min(mangaTotal(), mangaPage() * 15)}} / {{mangaTotal()}} truyện</span>
-              <div class="page-buttons">
-                <button [disabled]="mangaPage() <= 1" (click)="mangaPage.set(mangaPage() - 1); loadMangas()"><app-icon name="arrowLeft"/></button>
-                <span class="curr-page">Trang {{mangaPage()}}</span>
-                <button [disabled]="mangaPage() * 15 >= mangaTotal()" (click)="mangaPage.set(mangaPage() + 1); loadMangas()"><app-icon name="arrowRight"/></button>
+              <div class="pagination-info">
+                Hiển thị <strong>{{(mangaPage() - 1) * 15 + 1}} – {{Math.min(mangaTotal(), mangaPage() * 15)}}</strong> / <strong>{{mangaTotal() | number}}</strong> truyện (Trang {{mangaPage()}} / {{getTotalPages(mangaTotal(), 15)}})
+              </div>
+
+              <div class="page-controls">
+                <button class="pag-btn" [disabled]="mangaPage() <= 1" (click)="mangaPage.set(1); loadMangas()" title="Trang đầu">
+                  <app-icon name="arrowLeft"/>
+                  <span class="btn-text-sm">Đầu</span>
+                </button>
+                <button class="pag-btn icon-only" [disabled]="mangaPage() <= 1" (click)="mangaPage.set(mangaPage() - 1); loadMangas()" title="Trang trước">
+                  <app-icon name="arrowLeft"/>
+                </button>
+
+                <div class="page-numbers-group">
+                  @for(p of getPageNumbers(mangaPage(), mangaTotal(), 15); track $index){
+                    @if(p === '...'){
+                      <span class="pag-dots">…</span>
+                    }@else{
+                      <button 
+                        class="pag-num-btn" 
+                        [class.active]="mangaPage() === p"
+                        (click)="mangaPage.set(+p); loadMangas()"
+                      >
+                        {{p}}
+                      </button>
+                    }
+                  }
+                </div>
+
+                <button class="pag-btn icon-only" [disabled]="mangaPage() >= getTotalPages(mangaTotal(), 15)" (click)="mangaPage.set(mangaPage() + 1); loadMangas()" title="Trang tiếp">
+                  <app-icon name="arrowRight"/>
+                </button>
+                <button class="pag-btn" [disabled]="mangaPage() >= getTotalPages(mangaTotal(), 15)" (click)="mangaPage.set(getTotalPages(mangaTotal(), 15)); loadMangas()" title="Trang cuối">
+                  <span class="btn-text-sm">Cuối</span>
+                  <app-icon name="arrowRight"/>
+                </button>
               </div>
             </div>
           }
@@ -769,6 +800,49 @@
               </tbody>
             </table>
           </div>
+
+          <!-- User Pagination -->
+          @if(userTotal() > 20){
+            <div class="pagination-bar">
+              <div class="pagination-info">
+                Hiển thị <strong>{{(userPage() - 1) * 20 + 1}} – {{Math.min(userTotal(), userPage() * 20)}}</strong> / <strong>{{userTotal() | number}}</strong> thành viên (Trang {{userPage()}} / {{getTotalPages(userTotal(), 20)}})
+              </div>
+
+              <div class="page-controls">
+                <button class="pag-btn" [disabled]="userPage() <= 1" (click)="userPage.set(1); loadUsers()" title="Trang đầu">
+                  <app-icon name="arrowLeft"/>
+                  <span class="btn-text-sm">Đầu</span>
+                </button>
+                <button class="pag-btn icon-only" [disabled]="userPage() <= 1" (click)="userPage.set(userPage() - 1); loadUsers()" title="Trang trước">
+                  <app-icon name="arrowLeft"/>
+                </button>
+
+                <div class="page-numbers-group">
+                  @for(p of getPageNumbers(userPage(), userTotal(), 20); track $index){
+                    @if(p === '...'){
+                      <span class="pag-dots">…</span>
+                    }@else{
+                      <button 
+                        class="pag-num-btn" 
+                        [class.active]="userPage() === p"
+                        (click)="userPage.set(+p); loadUsers()"
+                      >
+                        {{p}}
+                      </button>
+                    }
+                  }
+                </div>
+
+                <button class="pag-btn icon-only" [disabled]="userPage() >= getTotalPages(userTotal(), 20)" (click)="userPage.set(userPage() + 1); loadUsers()" title="Trang tiếp">
+                  <app-icon name="arrowRight"/>
+                </button>
+                <button class="pag-btn" [disabled]="userPage() >= getTotalPages(userTotal(), 20)" (click)="userPage.set(getTotalPages(userTotal(), 20)); loadUsers()" title="Trang cuối">
+                  <span class="btn-text-sm">Cuối</span>
+                  <app-icon name="arrowRight"/>
+                </button>
+              </div>
+            </div>
+          }
         </div>
       }
 
@@ -942,6 +1016,33 @@
                   </tbody>
                 </table>
               </div>
+
+              <!-- Comment Pagination -->
+              @if(commentTotal() > 20){
+                <div class="pagination-bar">
+                  <div class="pagination-info">
+                    Hiển thị <strong>{{(commentPage() - 1) * 20 + 1}} – {{Math.min(commentTotal(), commentPage() * 20)}}</strong> / <strong>{{commentTotal() | number}}</strong> bình luận
+                  </div>
+
+                  <div class="page-controls">
+                    <button class="pag-btn icon-only" [disabled]="commentPage() <= 1" (click)="commentPage.set(commentPage() - 1); loadComments()" title="Trang trước">
+                      <app-icon name="arrowLeft"/>
+                    </button>
+                    <div class="page-numbers-group">
+                      @for(p of getPageNumbers(commentPage(), commentTotal(), 20); track $index){
+                        @if(p === '...'){
+                          <span class="pag-dots">…</span>
+                        }@else{
+                          <button class="pag-num-btn" [class.active]="commentPage() === p" (click)="commentPage.set(+p); loadComments()">{{p}}</button>
+                        }
+                      }
+                    </div>
+                    <button class="pag-btn icon-only" [disabled]="commentPage() >= getTotalPages(commentTotal(), 20)" (click)="commentPage.set(commentPage() + 1); loadComments()" title="Trang tiếp">
+                      <app-icon name="arrowRight"/>
+                    </button>
+                  </div>
+                </div>
+              }
             </div>
           }
 
@@ -1023,6 +1124,32 @@
               </tbody>
             </table>
           </div>
+
+          <!-- Logs Pagination -->
+          @if(logTotal() > 20){
+            <div class="pagination-bar">
+              <div class="pagination-info">
+                Hiển thị <strong>{{(logPage() - 1) * 20 + 1}} – {{Math.min(logTotal(), logPage() * 20)}}</strong> / <strong>{{logTotal() | number}}</strong> nhật ký
+              </div>
+              <div class="page-controls">
+                <button class="pag-btn icon-only" [disabled]="logPage() <= 1" (click)="logPage.set(logPage() - 1); loadLogs()" title="Trang trước">
+                  <app-icon name="arrowLeft"/>
+                </button>
+                <div class="page-numbers-group">
+                  @for(p of getPageNumbers(logPage(), logTotal(), 20); track $index){
+                    @if(p === '...'){
+                      <span class="pag-dots">…</span>
+                    }@else{
+                      <button class="pag-num-btn" [class.active]="logPage() === p" (click)="logPage.set(+p); loadLogs()">{{p}}</button>
+                    }
+                  }
+                </div>
+                <button class="pag-btn icon-only" [disabled]="logPage() >= getTotalPages(logTotal(), 20)" (click)="logPage.set(logPage() + 1); loadLogs()" title="Trang tiếp">
+                  <app-icon name="arrowRight"/>
+                </button>
+              </div>
+            </div>
+          }
         </div>
       }
     </main>
