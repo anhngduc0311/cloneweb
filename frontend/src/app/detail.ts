@@ -5,6 +5,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Api, Store, Manga, Chapter, Comment, Page, Reader as ReaderData, message, statuses, compact, ago, proxyImage, cleanDescription } from './core';
 import { Icon, Pagination } from './ui';
 import { Sidebar } from './sidebar';
+import JSZip from 'jszip';
 
 @Component({
   selector: 'app-detail',
@@ -71,6 +72,11 @@ import { Sidebar } from './sidebar';
               <button class="secondary btn-follow" [class.followed]="store.isFollowed(m.id)" (click)="follow()" [disabled]="following()">
                 <app-icon [name]="store.isFollowed(m.id) ? 'check' : 'heart'"/>
                 <span>{{store.isFollowed(m.id) ? 'Đang theo dõi' : 'Theo dõi'}}</span>
+              </button>
+
+              <button class="secondary btn-download-action" (click)="openDownloadModal()" title="Tải xuống tệp chương theo khoảng (ZIP/ảnh) để đọc offline">
+                <app-icon name="download"/>
+                <span>Tải chương</span>
               </button>
             </div>
 
@@ -228,6 +234,70 @@ import { Sidebar } from './sidebar';
     <!-- Sidebar for Desktop -->
     <app-sidebar/>
   </div>
+
+  @if(downloadModalOpen()){
+    <div class="modal-backdrop" (click)="!isDownloading() && downloadModalOpen.set(false)">
+      <div class="detail-download-modal glass-panel" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <div class="header-icon-wrap">
+            <app-icon name="download"/>
+            <div>
+              <h3>Tải truyện theo chương (Offline)</h3>
+              <p class="sub-text">Tải ảnh và đóng gói tệp ZIP để đọc offline trên máy</p>
+            </div>
+          </div>
+          <button class="icon-btn-close" [disabled]="isDownloading()" (click)="downloadModalOpen.set(false)"><app-icon name="close"/></button>
+        </div>
+
+        <div class="modal-body">
+          <div class="range-inputs-row">
+            <div class="range-field">
+              <label>Từ chương:</label>
+              <input type="number" [(ngModel)]="downloadFromChap" [min]="1" [disabled]="isDownloading()">
+            </div>
+            <div class="range-sep">➔</div>
+            <div class="range-field">
+              <label>Đến chương:</label>
+              <input type="number" [(ngModel)]="downloadToChap" [min]="1" [disabled]="isDownloading()">
+            </div>
+          </div>
+
+          <div class="quick-presets">
+            <button type="button" class="preset-pill" (click)="setDownloadPreset('all')" [disabled]="isDownloading()">Toàn bộ chương ({{chapters().length}})</button>
+            <button type="button" class="preset-pill" (click)="setDownloadPreset('first10')" [disabled]="isDownloading()">10 chương đầu</button>
+            <button type="button" class="preset-pill" (click)="setDownloadPreset('last10')" [disabled]="isDownloading()">10 chương mới</button>
+          </div>
+
+          <div class="range-note">
+            Sẽ tải <strong class="text-accent">{{getSelectedDownloadCount()}} chương</strong> (Từ #{{Math.min(downloadFromChap(), downloadToChap())}} đến #{{Math.max(downloadFromChap(), downloadToChap())}}).
+          </div>
+
+          @if(isDownloading() || downloadProgress() > 0){
+            <div class="download-progress-box">
+              <div class="progress-info">
+                <span>{{downloadStatus()}}</span>
+                <strong>{{downloadProgress()}}%</strong>
+              </div>
+              <div class="progress-bar-track">
+                <div class="progress-bar-fill" [style.width.%]="downloadProgress()"></div>
+              </div>
+            </div>
+          }
+        </div>
+
+        <div class="modal-footer">
+          @if(isDownloading()){
+            <button type="button" class="danger" (click)="cancelDownload()">Hủy tải</button>
+          }@else{
+            <button type="button" class="secondary" (click)="downloadModalOpen.set(false)">Đóng</button>
+            <button type="button" class="primary" (click)="startDownloadChapters()" [disabled]="getSelectedDownloadCount() === 0">
+              <app-icon name="download"/> Bắt đầu tải ({{getSelectedDownloadCount()}} chương)
+            </button>
+          }
+        </div>
+      </div>
+    </div>
+  }
 }
 `
 })
@@ -270,7 +340,17 @@ export class Detail {
   cleanDescription = cleanDescription;
   compact = compact;
   ago = ago;
+  Math = Math;
   countries: Record<string, string> = { ja: 'Nhật Bản', ko: 'Hàn Quốc', zh: 'Trung Quốc', en: 'Tiếng Anh', vi: 'Việt Nam' };
+
+  // Chapter Download State
+  downloadModalOpen = signal(false);
+  downloadFromChap = signal<number>(1);
+  downloadToChap = signal<number>(1);
+  isDownloading = signal(false);
+  downloadProgress = signal<number>(0);
+  downloadStatus = signal<string>('');
+  downloadAbortController: AbortController | null = null;
 
   constructor() {
     this.route.paramMap.subscribe(p => {
@@ -529,6 +609,194 @@ export class Detail {
       } else {
         void this.router.navigate(['/']);
       }
+    }
+  }
+
+  // =========================================================================
+  // CHAPTER DOWNLOAD LOGIC FOR DETAIL PAGE
+  // =========================================================================
+  openDownloadModal(singleChap?: Chapter) {
+    if (!this.chapters().length) {
+      this.store.notify('Chưa có chương nào để tải.');
+      return;
+    }
+
+    const chapNums = this.chapters()
+      .map(c => Number(c.number))
+      .filter(n => !isNaN(n))
+      .sort((a, b) => a - b);
+
+    const minNum = chapNums.length ? chapNums[0] : 1;
+    const maxNum = chapNums.length ? chapNums[chapNums.length - 1] : 1;
+
+    if (singleChap) {
+      this.downloadFromChap.set(singleChap.number);
+      this.downloadToChap.set(singleChap.number);
+    } else {
+      this.downloadFromChap.set(minNum);
+      this.downloadToChap.set(maxNum);
+    }
+
+    this.isDownloading.set(false);
+    this.downloadProgress.set(0);
+    this.downloadStatus.set('');
+    this.downloadModalOpen.set(true);
+  }
+
+  setDownloadPreset(preset: 'all' | 'first10' | 'last10') {
+    const sorted = [...this.chapters()].sort((a, b) => Number(a.number) - Number(b.number));
+    if (!sorted.length) return;
+
+    if (preset === 'all') {
+      this.downloadFromChap.set(Number(sorted[0].number));
+      this.downloadToChap.set(Number(sorted[sorted.length - 1].number));
+    } else if (preset === 'first10') {
+      const slice = sorted.slice(0, 10);
+      this.downloadFromChap.set(Number(slice[0].number));
+      this.downloadToChap.set(Number(slice[slice.length - 1].number));
+    } else if (preset === 'last10') {
+      const slice = sorted.slice(-10);
+      this.downloadFromChap.set(Number(slice[0].number));
+      this.downloadToChap.set(Number(slice[slice.length - 1].number));
+    }
+  }
+
+  getSelectedDownloadCount(): number {
+    const from = Math.min(this.downloadFromChap(), this.downloadToChap());
+    const to = Math.max(this.downloadFromChap(), this.downloadToChap());
+    return this.chapters().filter(c => Number(c.number) >= from && Number(c.number) <= to).length;
+  }
+
+  cancelDownload() {
+    if (this.downloadAbortController) {
+      this.downloadAbortController.abort();
+      this.downloadAbortController = null;
+    }
+    this.isDownloading.set(false);
+    this.downloadStatus.set('Đã dừng tải.');
+    this.store.notify('Đã hủy tải xuống.');
+  }
+
+  private async fetchImageBlob(url: string, signal?: AbortSignal): Promise<Blob> {
+    let targetUrl = url;
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      targetUrl = `/api/catalog/image-proxy?url=${encodeURIComponent(url)}`;
+    }
+    const res = await fetch(targetUrl, { signal });
+    if (!res.ok) {
+      if (targetUrl !== url) {
+        try {
+          const direct = await fetch(url, { signal });
+          if (direct.ok) return await direct.blob();
+        } catch { }
+      }
+      throw new Error(`HTTP ${res.status}`);
+    }
+    return await res.blob();
+  }
+
+  async startDownloadChapters() {
+    const from = Math.min(this.downloadFromChap(), this.downloadToChap());
+    const to = Math.max(this.downloadFromChap(), this.downloadToChap());
+    const targetChapters = this.chapters()
+      .filter(c => Number(c.number) >= from && Number(c.number) <= to)
+      .sort((a, b) => Number(a.number) - Number(b.number));
+
+    if (!targetChapters.length) {
+      this.store.notify('Vui lòng chọn khoảng chương hợp lệ.');
+      return;
+    }
+
+    this.isDownloading.set(true);
+    this.downloadProgress.set(0);
+    this.downloadStatus.set(`Bắt đầu tải ${targetChapters.length} chương...`);
+    this.downloadAbortController = new AbortController();
+    const signal = this.downloadAbortController.signal;
+
+    const mangaTitle = this.manga()?.title || 'Truyen';
+    const safeMangaTitle = mangaTitle.replace(/[/\\?%*:|"<>]/g, '_').trim();
+    const firstNum = targetChapters[0].number;
+    const lastNum = targetChapters[targetChapters.length - 1].number;
+
+    try {
+      const rootZip = new JSZip();
+      const totalChaps = targetChapters.length;
+      let totalPagesDownloaded = 0;
+
+      for (let cIdx = 0; cIdx < totalChaps; cIdx++) {
+        if (signal.aborted) break;
+        const chap = targetChapters[cIdx];
+        const chapFolderName = `Chuong_${String(chap.number).padStart(3, '0')}`;
+        this.downloadStatus.set(`[${cIdx + 1}/${totalChaps}] Đang tải ${chap.title}...`);
+
+        let pages: string[] = [];
+        try {
+          const reader = await this.api.request<any>('/chapters/' + chap.id);
+          if (reader) {
+            pages = reader.pages || reader.dataSaverPages || [];
+          }
+        } catch { }
+
+        if (pages.length > 0) {
+          const chapFolder = rootZip.folder(chapFolderName);
+          const totalPages = pages.length;
+
+          for (let pIdx = 0; pIdx < totalPages; pIdx++) {
+            if (signal.aborted) break;
+            const imgUrl = pages[pIdx];
+            const pageNumPad = String(pIdx + 1).padStart(3, '0');
+            const ext = imgUrl.includes('.png') ? 'png' : imgUrl.includes('.webp') ? 'webp' : 'jpg';
+            const fileName = `${pageNumPad}.${ext}`;
+
+            this.downloadStatus.set(`[${cIdx + 1}/${totalChaps}] ${chap.title} • Ảnh ${pIdx + 1}/${totalPages}`);
+
+            try {
+              const blob = await this.fetchImageBlob(imgUrl, signal);
+              chapFolder?.file(fileName, blob);
+              totalPagesDownloaded++;
+            } catch { }
+
+            const overall = ((cIdx + (pIdx + 1) / totalPages) / totalChaps) * 85;
+            this.downloadProgress.set(Math.round(overall));
+          }
+        }
+      }
+
+      if (signal.aborted) return;
+
+      this.downloadStatus.set('Đang nén file ZIP toàn bộ chương...');
+      this.downloadProgress.set(88);
+
+      const zipBlob = await rootZip.generateAsync(
+        { type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 5 } },
+        meta => {
+          this.downloadProgress.set(88 + Math.round(meta.percent * 0.11));
+          this.downloadStatus.set(`Đang nén ZIP: ${Math.round(meta.percent)}%`);
+        }
+      );
+
+      this.downloadProgress.set(100);
+      this.downloadStatus.set('Nén xong! Đang lưu tệp về máy...');
+
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `[AkaTruyen]_${safeMangaTitle}_Chap_${firstNum}_den_${lastNum}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      this.downloadStatus.set(`Tải về thành công ${totalChaps} chương (${totalPagesDownloaded} ảnh)!`);
+      this.store.notify(`Đã xuất file ZIP thành công (${totalChaps} chương)!`);
+    } catch (e: any) {
+      if (!signal.aborted) {
+        this.downloadStatus.set(`Lỗi: ${e.message || 'Không thể tải.'}`);
+        this.store.notify('Có lỗi xảy ra khi tải chương.');
+      }
+    } finally {
+      this.isDownloading.set(false);
+      this.downloadAbortController = null;
     }
   }
 }

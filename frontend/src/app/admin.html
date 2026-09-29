@@ -495,6 +495,9 @@
               <p class="pane-subtitle">Soạn thảo văn bản rich text (truyện chữ) hoặc upload ảnh hàng loạt (truyện tranh), thiết lập mở khóa xu</p>
             </div>
             <div class="pane-actions">
+              <button class="btn-secondary" (click)="openDownloadChaptersModal()" [disabled]="!selectedMangaId() || !chapters().length" title="Tải xuống tệp chương theo khoảng (ZIP/ảnh) để đọc offline hoặc sao lưu">
+                <app-icon name="download"/> <span>Tải truyện theo chương</span>
+              </button>
               <button class="btn-primary" (click)="openCreateChapterModal()" [disabled]="!selectedMangaId()">
                 <app-icon name="plus"/> <span>Thêm chương mới</span>
               </button>
@@ -575,6 +578,9 @@
                       <td>{{ago(c.publishedAt)}}</td>
                       <td class="text-right">
                         <div class="action-buttons">
+                          <button class="icon-btn-action" (click)="openDownloadChaptersModal(c)" title="Tải chương này về máy">
+                            <app-icon name="download"/>
+                          </button>
                           <a [routerLink]="['/chuong', c.id]" target="_blank" class="icon-btn-action" title="Xem trên web">
                             <app-icon name="compass"/>
                           </a>
@@ -1338,25 +1344,156 @@
   }
 
   <!-- ================================================================= -->
-  <!-- MODAL: RESOLVE REPORT -->
+  <!-- MODAL: DOWNLOAD CHAPTERS (TẢI TRUYỆN THEO CHƯƠNG) -->
   <!-- ================================================================= -->
-  @if(reportResolveModalOpen()){
-    <div class="modal-backdrop" (click)="reportResolveModalOpen.set(false)">
-      <div class="admin-modal glass-card" (click)="$event.stopPropagation()">
+  @if(downloadModalOpen()){
+    <div class="modal-backdrop" (click)="!isDownloading() && downloadModalOpen.set(false)">
+      <div class="admin-modal download-modal glass-card" (click)="$event.stopPropagation()">
         <div class="modal-header">
-          <h3>Xử lý báo cáo lỗi</h3>
-          <button class="icon-btn-close" (click)="reportResolveModalOpen.set(false)"><app-icon name="close"/></button>
+          <div class="header-with-icon">
+            <app-icon name="download"/>
+            <div>
+              <h3>Tải truyện theo chương (Offline / Backup)</h3>
+              <p class="sub-text">Xuất ảnh và nội dung truyện thành tệp ZIP nén để lưu trữ hoặc đọc offline</p>
+            </div>
+          </div>
+          <button class="icon-btn-close" [disabled]="isDownloading()" (click)="downloadModalOpen.set(false)"><app-icon name="close"/></button>
         </div>
-        <div class="modal-body">
-          <p><strong>Lý do:</strong> {{selectedReport()?.reason}}</p>
-          <div class="form-group">
-            <label>Ghi chú xử lý</label>
-            <textarea [(ngModel)]="reportResolveNotes" name="repNotes" rows="3" placeholder="Đã sửa link ảnh die / Đã sắp xếp lại thứ tự chương..."></textarea>
+
+        <div class="modal-body download-body">
+          <!-- Manga Info Strip -->
+          <div class="download-manga-summary">
+            <img [src]="selectedManga()?.cover" class="summary-cover" (error)="$any($event.target).src = '/cover-placeholder.svg'">
+            <div class="summary-meta">
+              <h4>{{selectedManga()?.title}}</h4>
+              <span>{{chapters().length}} chương khả dụng • Tác giả: {{selectedManga()?.author || 'Chưa rõ'}}</span>
+            </div>
           </div>
-          <div class="modal-footer">
-            <button type="button" class="btn-secondary" (click)="resolveReport('dismissed')">Bỏ qua báo cáo</button>
-            <button type="button" class="btn-primary" (click)="resolveReport('resolved')">Đã khắc phục xong</button>
+
+          <!-- Mode Selector -->
+          <div class="download-mode-tabs">
+            <button type="button" class="mode-tab-btn" [class.active]="downloadRangeMode() === 'range'" (click)="downloadRangeMode.set('range')" [disabled]="isDownloading()">
+              <app-icon name="layers"/> <span>Theo khoảng chương</span>
+            </button>
+            <button type="button" class="mode-tab-btn" [class.active]="downloadRangeMode() === 'custom'" (click)="downloadRangeMode.set('custom')" [disabled]="isDownloading()">
+              <app-icon name="filter"/> <span>Chọn từng chương</span>
+            </button>
           </div>
+
+          <!-- Range Mode Settings -->
+          @if(downloadRangeMode() === 'range'){
+            <div class="range-config-card">
+              <div class="range-inputs-row">
+                <div class="range-field">
+                  <label>Từ chương:</label>
+                  <input type="number" [(ngModel)]="downloadFromChap" [min]="1" [disabled]="isDownloading()">
+                </div>
+                <div class="range-sep">➔</div>
+                <div class="range-field">
+                  <label>Đến chương:</label>
+                  <input type="number" [(ngModel)]="downloadToChap" [min]="1" [disabled]="isDownloading()">
+                </div>
+              </div>
+
+              <!-- Quick Presets -->
+              <div class="quick-presets">
+                <span class="preset-label">Chọn nhanh:</span>
+                <button type="button" class="preset-pill" (click)="setDownloadPreset('all')" [disabled]="isDownloading()">Toàn bộ chương ({{chapters().length}})</button>
+                <button type="button" class="preset-pill" (click)="setDownloadPreset('first10')" [disabled]="isDownloading()">10 chương đầu</button>
+                <button type="button" class="preset-pill" (click)="setDownloadPreset('last10')" [disabled]="isDownloading()">10 chương mới nhất</button>
+              </div>
+
+              <div class="range-summary-note">
+                Sẽ tải <strong class="text-accent">{{getSelectedDownloadCount()}} chương</strong> từ #{{Math.min(downloadFromChap(), downloadToChap())}} đến #{{Math.max(downloadFromChap(), downloadToChap())}}.
+              </div>
+            </div>
+          }
+
+          <!-- Custom Selection Mode -->
+          @if(downloadRangeMode() === 'custom'){
+            <div class="custom-chap-select-card">
+              <div class="custom-select-toolbar">
+                <div class="chap-search-box">
+                  <app-icon name="search"/>
+                  <input type="text" [(ngModel)]="downloadChapSearch" placeholder="Tìm tên hoặc số chương..." [disabled]="isDownloading()">
+                </div>
+                <div class="select-actions">
+                  <button type="button" class="btn-text-action" (click)="toggleSelectAllChapters(true)" [disabled]="isDownloading()">Chọn tất cả</button>
+                  <button type="button" class="btn-text-action" (click)="toggleSelectAllChapters(false)" [disabled]="isDownloading()">Bỏ chọn</button>
+                </div>
+              </div>
+
+              <div class="custom-chap-list">
+                @for(c of getFilteredDownloadChapters(); track c.id){
+                  <label class="chap-check-item" [class.selected]="isChapterSelected(c.id)">
+                    <input type="checkbox" [checked]="isChapterSelected(c.id)" (change)="toggleSelectChapter(c.id)" [disabled]="isDownloading()">
+                    <span class="chap-check-num">#{{c.number}}</span>
+                    <span class="chap-check-title">{{c.title}}</span>
+                    <span class="chap-check-pages">{{c.contentType === 'novel' ? 'Truyện chữ' : c.pagesCount + ' ảnh'}}</span>
+                  </label>
+                }
+                @if(!getFilteredDownloadChapters().length){
+                  <div class="empty-chap-search">Không tìm thấy chương nào phù hợp.</div>
+                }
+              </div>
+
+              <div class="custom-selection-count">
+                Đã chọn: <strong class="text-accent">{{downloadSelectedChapIds().length}} / {{chapters().length}} chương</strong>
+              </div>
+            </div>
+          }
+
+          <!-- Options Row -->
+          <div class="download-options-grid">
+            <div class="opt-col">
+              <label class="opt-label">Định dạng đóng gói:</label>
+              <select [(ngModel)]="downloadFormat" [disabled]="isDownloading()">
+                <option value="single_zip">1 Tệp ZIP gom toàn bộ chương</option>
+              </select>
+            </div>
+            <div class="opt-col">
+              <label class="opt-label">Chất lượng tải ảnh:</label>
+              <select [(ngModel)]="downloadQuality" [disabled]="isDownloading()">
+                <option value="original">Chất lượng gốc (Original HD)</option>
+                <option value="saver">Tiết kiệm băng thông (Data Saver)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Progress Section -->
+          @if(isDownloading() || downloadProgress() > 0){
+            <div class="download-progress-card">
+              <div class="progress-top-meta">
+                <span class="progress-status-txt">{{downloadStatus()}}</span>
+                <span class="progress-percent-val">{{downloadProgress()}}%</span>
+              </div>
+              <div class="progress-bar-track">
+                <div class="progress-bar-fill" [style.width.%]="downloadProgress()"></div>
+              </div>
+
+              <!-- Console Logs -->
+              @if(downloadLogs().length){
+                <div class="download-logs-box">
+                  @for(log of downloadLogs(); track log){
+                    <div class="log-line">{{log}}</div>
+                  }
+                </div>
+              }
+            </div>
+          }
+        </div>
+
+        <div class="modal-footer">
+          @if(isDownloading()){
+            <button type="button" class="btn-danger" (click)="cancelDownload()">
+              <app-icon name="close"/> <span>Hủy tiến trình</span>
+            </button>
+          }@else{
+            <button type="button" class="btn-secondary" (click)="downloadModalOpen.set(false)">Đóng</button>
+            <button type="button" class="btn-primary btn-start-download" (click)="startDownloadChapters()" [disabled]="getSelectedDownloadCount() === 0">
+              <app-icon name="download"/> <span>Bắt đầu tải ({{getSelectedDownloadCount()}} chương)</span>
+            </button>
+          }
         </div>
       </div>
     </div>

@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { Api, Store, compact, ago } from './core';
 import { Icon } from './ui';
+import JSZip from 'jszip';
 
 export interface AdminKpis {
   viewsToday: number;
@@ -201,6 +202,21 @@ export class AdminComponent implements OnInit {
     content: '' // rich text for novels
   };
   uploadingImages = signal(false);
+
+  // Chapter Download State
+  downloadModalOpen = signal(false);
+  downloadRangeMode = signal<'range' | 'custom'>('range');
+  downloadFromChap = signal<number>(1);
+  downloadToChap = signal<number>(1);
+  downloadSelectedChapIds = signal<string[]>([]);
+  downloadFormat = signal<'single_zip' | 'multi_zip' | 'text'>('single_zip');
+  downloadQuality = signal<'original' | 'saver'>('original');
+  isDownloading = signal(false);
+  downloadProgress = signal<number>(0);
+  downloadStatus = signal<string>('');
+  downloadLogs = signal<string[]>([]);
+  downloadChapSearch = signal<string>('');
+  downloadAbortController: AbortController | null = null;
 
   // Taxonomy state
   taxonomyType = signal<'genre' | 'tag' | 'author' | 'group'>('genre');
@@ -629,6 +645,306 @@ export class AdminComponent implements OnInit {
       void this.loadChapters(this.selectedMangaId());
     } catch (e: any) {
       this.store.notify(e.message || 'Không thể xóa chương.');
+    }
+  }
+
+  // =========================================================================
+  // CHAPTER DOWNLOADER (TẢI TRUYỆN THEO CHƯƠNG)
+  // =========================================================================
+  openDownloadChaptersModal(singleChap?: AdminChapter) {
+    if (!this.selectedMangaId() || this.chapters().length === 0) {
+      this.store.notify('Không có danh sách chương để tải.');
+      return;
+    }
+
+    const chapNums = this.chapters()
+      .map(c => Number(c.number))
+      .filter(n => !isNaN(n))
+      .sort((a, b) => a - b);
+
+    const minNum = chapNums.length ? chapNums[0] : 1;
+    const maxNum = chapNums.length ? chapNums[chapNums.length - 1] : 1;
+
+    if (singleChap) {
+      this.downloadRangeMode.set('range');
+      this.downloadFromChap.set(singleChap.number);
+      this.downloadToChap.set(singleChap.number);
+      this.downloadSelectedChapIds.set([singleChap.id]);
+    } else {
+      this.downloadRangeMode.set('range');
+      this.downloadFromChap.set(minNum);
+      this.downloadToChap.set(maxNum);
+      this.downloadSelectedChapIds.set(this.chapters().map(c => c.id));
+    }
+
+    this.downloadFormat.set('single_zip');
+    this.downloadQuality.set('original');
+    this.isDownloading.set(false);
+    this.downloadProgress.set(0);
+    this.downloadStatus.set('');
+    this.downloadLogs.set([]);
+    this.downloadChapSearch.set('');
+    this.downloadModalOpen.set(true);
+  }
+
+  setDownloadPreset(preset: 'all' | 'first10' | 'last10') {
+    const sorted = [...this.chapters()].sort((a, b) => Number(a.number) - Number(b.number));
+    if (!sorted.length) return;
+
+    if (preset === 'all') {
+      this.downloadFromChap.set(Number(sorted[0].number));
+      this.downloadToChap.set(Number(sorted[sorted.length - 1].number));
+      this.downloadSelectedChapIds.set(sorted.map(c => c.id));
+    } else if (preset === 'first10') {
+      const slice = sorted.slice(0, 10);
+      this.downloadFromChap.set(Number(slice[0].number));
+      this.downloadToChap.set(Number(slice[slice.length - 1].number));
+      this.downloadSelectedChapIds.set(slice.map(c => c.id));
+    } else if (preset === 'last10') {
+      const slice = sorted.slice(-10);
+      this.downloadFromChap.set(Number(slice[0].number));
+      this.downloadToChap.set(Number(slice[slice.length - 1].number));
+      this.downloadSelectedChapIds.set(slice.map(c => c.id));
+    }
+  }
+
+  toggleSelectAllChapters(select: boolean) {
+    if (select) {
+      this.downloadSelectedChapIds.set(this.chapters().map(c => c.id));
+    } else {
+      this.downloadSelectedChapIds.set([]);
+    }
+  }
+
+  toggleSelectChapter(id: string) {
+    const cur = this.downloadSelectedChapIds();
+    if (cur.includes(id)) {
+      this.downloadSelectedChapIds.set(cur.filter(x => x !== id));
+    } else {
+      this.downloadSelectedChapIds.set([...cur, id]);
+    }
+  }
+
+  isChapterSelected(id: string): boolean {
+    return this.downloadSelectedChapIds().includes(id);
+  }
+
+  getFilteredDownloadChapters(): AdminChapter[] {
+    const q = this.downloadChapSearch().trim().toLowerCase();
+    const sorted = [...this.chapters()].sort((a, b) => Number(a.number) - Number(b.number));
+    if (!q) return sorted;
+    return sorted.filter(c => c.title.toLowerCase().includes(q) || String(c.number).includes(q));
+  }
+
+  getSelectedDownloadCount(): number {
+    if (this.downloadRangeMode() === 'range') {
+      const from = Math.min(this.downloadFromChap(), this.downloadToChap());
+      const to = Math.max(this.downloadFromChap(), this.downloadToChap());
+      return this.chapters().filter(c => Number(c.number) >= from && Number(c.number) <= to).length;
+    }
+    return this.downloadSelectedChapIds().length;
+  }
+
+  cancelDownload() {
+    if (this.downloadAbortController) {
+      this.downloadAbortController.abort();
+      this.downloadAbortController = null;
+    }
+    this.isDownloading.set(false);
+    this.downloadStatus.set('Đã dừng tiến trình tải xuống.');
+    this.store.notify('Đã hủy tải xuống.');
+  }
+
+  private addDownloadLog(msg: string) {
+    const time = new Date().toLocaleTimeString('vi-VN');
+    this.downloadLogs.update(logs => [`[${time}] ${msg}`, ...logs.slice(0, 49)]);
+  }
+
+  private async fetchImageBlobWithProxy(url: string, signal?: AbortSignal): Promise<Blob> {
+    let targetUrl = url;
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      targetUrl = `/api/catalog/image-proxy?url=${encodeURIComponent(url)}`;
+    }
+    const res = await fetch(targetUrl, { signal });
+    if (!res.ok) {
+      if (targetUrl !== url) {
+        try {
+          const direct = await fetch(url, { signal });
+          if (direct.ok) return await direct.blob();
+        } catch { }
+      }
+      throw new Error(`HTTP ${res.status}`);
+    }
+    return await res.blob();
+  }
+
+  private async getChapterDetailForDownload(chapterId: string): Promise<{ pages: string[]; content: string | null; title: string; number: number }> {
+    // 1. Check local admin endpoint
+    try {
+      const full = await this.api.request<any>('/admin/chapters/' + chapterId);
+      if (full && ((full.pages && full.pages.length > 0) || full.content)) {
+        return {
+          pages: full.pages || [],
+          content: full.content || null,
+          title: full.title || `Chương ${full.number}`,
+          number: Number(full.number) || 1
+        };
+      }
+    } catch { }
+
+    // 2. Check public catalog reader endpoint
+    try {
+      const reader = await this.api.request<any>('/chapters/' + chapterId);
+      if (reader) {
+        const isSaver = this.downloadQuality() === 'saver';
+        const pages = (isSaver && reader.dataSaverPages && reader.dataSaverPages.length > 0)
+          ? reader.dataSaverPages
+          : (reader.pages || []);
+        return {
+          pages,
+          content: null,
+          title: reader.chapter?.title || `Chương ${reader.chapter?.number || 1}`,
+          number: Number(reader.chapter?.number) || 1
+        };
+      }
+    } catch { }
+
+    return { pages: [], content: null, title: 'Chương', number: 1 };
+  }
+
+  async startDownloadChapters() {
+    let targetChapters: AdminChapter[] = [];
+    if (this.downloadRangeMode() === 'range') {
+      const from = Math.min(this.downloadFromChap(), this.downloadToChap());
+      const to = Math.max(this.downloadFromChap(), this.downloadToChap());
+      targetChapters = this.chapters()
+        .filter(c => Number(c.number) >= from && Number(c.number) <= to)
+        .sort((a, b) => Number(a.number) - Number(b.number));
+    } else {
+      const selectedSet = new Set(this.downloadSelectedChapIds());
+      targetChapters = this.chapters()
+        .filter(c => selectedSet.has(c.id))
+        .sort((a, b) => Number(a.number) - Number(b.number));
+    }
+
+    if (!targetChapters.length) {
+      this.store.notify('Vui lòng chọn ít nhất một chương hợp lệ để tải.');
+      return;
+    }
+
+    this.isDownloading.set(true);
+    this.downloadProgress.set(0);
+    this.downloadLogs.set([]);
+    this.downloadStatus.set(`Bắt đầu tải ${targetChapters.length} chương...`);
+    this.downloadAbortController = new AbortController();
+    const signal = this.downloadAbortController.signal;
+
+    const mangaTitle = this.selectedManga()?.title || 'Truyen';
+    const safeMangaTitle = mangaTitle.replace(/[/\\?%*:|"<>]/g, '_').trim();
+    const firstNum = targetChapters[0].number;
+    const lastNum = targetChapters[targetChapters.length - 1].number;
+
+    try {
+      this.addDownloadLog(`Khởi tạo gói tải cho "${mangaTitle}" (${targetChapters.length} chương)`);
+      const rootZip = new JSZip();
+
+      let totalPagesDownloaded = 0;
+      const totalChaps = targetChapters.length;
+
+      for (let cIdx = 0; cIdx < totalChaps; cIdx++) {
+        if (signal.aborted) break;
+        const chap = targetChapters[cIdx];
+        const chapNumPad = String(chap.number).padStart(3, '0');
+        const chapFolderName = `Chuong_${chapNumPad}`;
+
+        this.downloadStatus.set(`[${cIdx + 1}/${totalChaps}] Đang tải ${chap.title}...`);
+        this.addDownloadLog(`[${cIdx + 1}/${totalChaps}] Lấy dữ liệu: ${chap.title}`);
+
+        const detail = await this.getChapterDetailForDownload(chap.id);
+
+        if (detail.content) {
+          // Novel chapter text
+          rootZip.folder(chapFolderName)?.file(`${chapFolderName}.txt`, detail.content);
+          this.addDownloadLog(`✓ Đã lưu nội dung văn bản cho ${chap.title}`);
+        } else if (detail.pages && detail.pages.length > 0) {
+          const chapFolder = rootZip.folder(chapFolderName);
+          const totalPages = detail.pages.length;
+
+          for (let pIdx = 0; pIdx < totalPages; pIdx++) {
+            if (signal.aborted) break;
+            const imgUrl = detail.pages[pIdx];
+            const pageNumPad = String(pIdx + 1).padStart(3, '0');
+            const ext = imgUrl.includes('.png') ? 'png' : imgUrl.includes('.webp') ? 'webp' : 'jpg';
+            const fileName = `${pageNumPad}.${ext}`;
+
+            this.downloadStatus.set(`[${cIdx + 1}/${totalChaps}] ${chap.title} • Ảnh ${pIdx + 1}/${totalPages}`);
+
+            try {
+              const blob = await this.fetchImageBlobWithProxy(imgUrl, signal);
+              chapFolder?.file(fileName, blob);
+              totalPagesDownloaded++;
+            } catch (err: any) {
+              if (signal.aborted) break;
+              this.addDownloadLog(`⚠ Lỗi tải ảnh ${pIdx + 1} của ${chap.title}: ${err.message || ''}`);
+            }
+
+            // Update percentage progress
+            const currentChapProgress = (pIdx + 1) / totalPages;
+            const overall = ((cIdx + currentChapProgress) / totalChaps) * 85;
+            this.downloadProgress.set(Math.round(overall));
+          }
+          this.addDownloadLog(`✓ Đã tải xong ${detail.pages.length} trang của ${chap.title}`);
+        } else {
+          this.addDownloadLog(`⚠ Không tìm thấy nội dung hình ảnh cho ${chap.title}`);
+        }
+      }
+
+      if (signal.aborted) {
+        return;
+      }
+
+      // Final packaging
+      this.downloadStatus.set('Đang nén file ZIP... Vui lòng đợi trong giây lát.');
+      this.addDownloadLog('Bắt đầu nén toàn bộ tệp thành định dạng ZIP...');
+      this.downloadProgress.set(88);
+
+      const zipBlob = await rootZip.generateAsync(
+        {
+          type: 'blob',
+          compression: 'DEFLATE',
+          compressionOptions: { level: 5 }
+        },
+        metadata => {
+          this.downloadProgress.set(88 + Math.round(metadata.percent * 0.11));
+          this.downloadStatus.set(`Đang nén ZIP: ${Math.round(metadata.percent)}%`);
+        }
+      );
+
+      // Trigger download
+      this.downloadProgress.set(100);
+      this.downloadStatus.set('Nén xong! Đang lưu tệp về máy...');
+      this.addDownloadLog('Hoàn tất đóng gói! Đang kích hoạt tải về máy.');
+
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `[AkaTruyen]_${safeMangaTitle}_Chap_${firstNum}_den_${lastNum}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      this.downloadStatus.set(`Tải về thành công ${totalChaps} chương (${totalPagesDownloaded} ảnh)!`);
+      this.store.notify(`Đã xuất file ZIP thành công (${totalChaps} chương)!`);
+    } catch (e: any) {
+      if (!signal.aborted) {
+        this.downloadStatus.set(`Lỗi: ${e.message || 'Không thể tải chương.'}`);
+        this.addDownloadLog(`❌ Lỗi: ${e.message || 'Lỗi không xác định'}`);
+        this.store.notify('Có lỗi xảy ra khi tải chương.');
+      }
+    } finally {
+      this.isDownloading.set(false);
+      this.downloadAbortController = null;
     }
   }
 
