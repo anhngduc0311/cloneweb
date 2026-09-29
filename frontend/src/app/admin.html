@@ -562,9 +562,30 @@
             }
           </div>
 
-          <!-- Chapter Table -->
+          <!-- Chapter Filter Toolbar & Table -->
           @if(selectedMangaId()){
-            <div class="data-table-container glass-card mt-4">
+            <div class="filter-toolbar glass-card mt-4 mb-3">
+              <div class="search-input-wrap">
+                <app-icon name="search"/>
+                <input
+                  type="text"
+                  placeholder="Tìm tên hoặc số chương..."
+                  [ngModel]="chapterSearchQuery()"
+                  (ngModelChange)="chapterSearchQuery.set($event); chapterPage.set(1)"
+                >
+              </div>
+
+              <div class="filter-selects">
+                <select [ngModel]="chapterPageSize()" (ngModelChange)="chapterPageSize.set(+$event); chapterPage.set(1)">
+                  <option [value]="20">20 chương / trang</option>
+                  <option [value]="50">50 chương / trang</option>
+                  <option [value]="100">100 chương / trang</option>
+                  <option [value]="99999">Hiển thị tất cả</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="data-table-container glass-card">
               <table class="data-table">
                 <thead>
                   <tr>
@@ -578,7 +599,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  @for(c of chapters(); track c.id){
+                  @for(c of getPagedChapters(); track c.id){
                     <tr>
                       <td><span class="chap-num-badge">#{{c.number}}</span></td>
                       <td><strong class="chap-title">{{c.title}}</strong></td>
@@ -625,16 +646,61 @@
                       </td>
                     </tr>
                   }
-                  @if(!chapters().length && !loading()){
+                  @if(!getFilteredChaptersList().length && !loading()){
                     <tr>
                       <td colspan="7" class="text-center py-6">
-                        <div class="empty-table">Bộ truyện này chưa có chương nào. Nhấn "+ Thêm chương mới" để bắt đầu!</div>
+                        <div class="empty-table">
+                          {{chapterSearchQuery() ? 'Không tìm thấy chương nào phù hợp với từ khóa.' : 'Bộ truyện này chưa có chương nào. Nhấn "+ Thêm chương mới" để bắt đầu!'}}
+                        </div>
                       </td>
                     </tr>
                   }
                 </tbody>
               </table>
             </div>
+
+            <!-- Chapter Pagination Bar -->
+            @if(getFilteredChaptersList().length > chapterPageSize()){
+              <div class="pagination-bar">
+                <div class="pagination-info">
+                  Hiển thị <strong>{{(chapterPage() - 1) * chapterPageSize() + 1}} – {{Math.min(getFilteredChaptersList().length, chapterPage() * chapterPageSize())}}</strong> / <strong>{{getFilteredChaptersList().length}}</strong> chương (Trang {{chapterPage()}} / {{getTotalPages(getFilteredChaptersList().length, chapterPageSize())}})
+                </div>
+
+                <div class="page-controls">
+                  <button class="pag-btn" [disabled]="chapterPage() <= 1" (click)="chapterPage.set(1)" title="Trang đầu">
+                    <app-icon name="arrowLeft"/>
+                    <span class="btn-text-sm">Đầu</span>
+                  </button>
+                  <button class="pag-btn icon-only" [disabled]="chapterPage() <= 1" (click)="chapterPage.set(chapterPage() - 1)" title="Trang trước">
+                    <app-icon name="arrowLeft"/>
+                  </button>
+
+                  <div class="page-numbers-group">
+                    @for(p of getPageNumbers(chapterPage(), getFilteredChaptersList().length, chapterPageSize()); track $index){
+                      @if(p === '...'){
+                        <span class="pag-dots">…</span>
+                      }@else{
+                        <button 
+                          class="pag-num-btn" 
+                          [class.active]="chapterPage() === p"
+                          (click)="chapterPage.set(+p)"
+                        >
+                          {{p}}
+                        </button>
+                      }
+                    }
+                  </div>
+
+                  <button class="pag-btn icon-only" [disabled]="chapterPage() >= getTotalPages(getFilteredChaptersList().length, chapterPageSize())" (click)="chapterPage.set(chapterPage() + 1)" title="Trang tiếp">
+                    <app-icon name="arrowRight"/>
+                  </button>
+                  <button class="pag-btn" [disabled]="chapterPage() >= getTotalPages(getFilteredChaptersList().length, chapterPageSize())" (click)="chapterPage.set(getTotalPages(getFilteredChaptersList().length, chapterPageSize()))" title="Trang cuối">
+                    <span class="btn-text-sm">Cuối</span>
+                    <app-icon name="arrowRight"/>
+                  </button>
+                </div>
+              </div>
+            }
           }
         </div>
       }
