@@ -1531,11 +1531,6 @@
                   <app-icon name="cloud"/>
                   <span>{{ uploadingCoverToDrive() ? 'Đang tải lên Drive...' : 'Upload bìa lên Google Drive' }}</span>
                 </label>
-                <label class="btn-file-upload btn-local-upload-sm" [class.btn-uploading]="uploadingCoverLocal()">
-                  <input type="file" accept="image/*" (change)="onCoverUploadLocal($event)" [disabled]="uploadingCoverLocal()" style="display:none">
-                  <app-icon name="image"/>
-                  <span>{{ uploadingCoverLocal() ? 'Đang tải...' : 'Tải lên máy chủ' }}</span>
-                </label>
               </div>
             </div>
             <div class="cover-input-preview-row">
@@ -1663,12 +1658,6 @@
                   <button type="button" class="btn-action-drive" (click)="openDriveScanModal()">
                     <app-icon name="folder"/> <span>Nhập từ thư mục Drive</span>
                   </button>
-
-                  <!-- Button 3: Local Upload -->
-                  <label class="btn-file-upload btn-local-upload">
-                    <input type="file" multiple accept="image/*" (change)="onFileUpload($event)" [disabled]="uploadingImages()" style="display:none">
-                    <app-icon name="image"/> <span>Tải lên máy chủ</span>
-                  </label>
 
                   <!-- Button 4: Drive Settings -->
                   <button type="button" class="btn-icon-setting" (click)="driveConfigModalOpen.set(true)" title="Cài đặt Google Drive">

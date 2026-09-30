@@ -679,38 +679,10 @@ public static class AdminEndpoints
             return Results.NoContent();
         });
 
-        // Chapter Image Upload (Multipart)
-        admin.MapPost("/chapters/upload-images", async (IFormFileCollection files, IWebHostEnvironment env) =>
+        // Chapter Image Upload (Multipart) - Local storage is disabled in favor of Google Drive
+        admin.MapPost("/chapters/upload-images", () =>
         {
-            if (files.Count == 0) return Results.BadRequest(new { message = "Không có file ảnh nào được gửi." });
-
-            var webRoot = env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-            var uploadDir = Path.Combine(webRoot, "uploads", "chapters", DateTime.UtcNow.ToString("yyyyMMdd"));
-            Directory.CreateDirectory(uploadDir);
-
-            var orderedFiles = files
-                .OrderBy(f => System.Text.RegularExpressions.Regex.Replace(f.FileName, @"\d+", m => m.Value.PadLeft(10, '0')))
-                .ToList();
-
-            var uploadedUrls = new List<string>();
-            foreach (var file in orderedFiles)
-            {
-                if (file.Length == 0) continue;
-                var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-                if (string.IsNullOrEmpty(ext)) ext = ".jpg";
-                var fileName = $"{Guid.NewGuid():N}{ext}";
-                var filePath = Path.Combine(uploadDir, fileName);
-
-                using (var stream = new FileStream(filePath, FileMode.Create))
-                {
-                    await file.CopyToAsync(stream);
-                }
-
-                var relUrl = $"/api/uploads/chapters/{DateTime.UtcNow:yyyyMMdd}/{fileName}";
-                uploadedUrls.Add(relUrl);
-            }
-
-            return Results.Ok(new { urls = uploadedUrls });
+            return Results.BadRequest(new { message = "Hệ thống đã chuyển sang lưu trữ 100% trên Google Drive để tiết kiệm tài nguyên máy chủ. Vui lòng sử dụng nút 'Upload lên Google Drive'." });
         }).DisableAntiforgery();
 
         // 3.1 GOOGLE DRIVE INTEGRATION ENDPOINTS

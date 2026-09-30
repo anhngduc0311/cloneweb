@@ -121,6 +121,12 @@ fi
 if ! grep -q "^GOOGLE_CLIENT_SECRET=" "$ENV_FILE" 2>/dev/null; then
   echo "GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}" >> "$ENV_FILE"
 fi
+if ! grep -q "^GOOGLE_DRIVE_REFRESH_TOKEN=" "$ENV_FILE" 2>/dev/null; then
+  echo "GOOGLE_DRIVE_REFRESH_TOKEN=${GOOGLE_DRIVE_REFRESH_TOKEN:-}" >> "$ENV_FILE"
+fi
+if ! grep -q "^GOOGLE_DRIVE_FOLDER_ID=" "$ENV_FILE" 2>/dev/null; then
+  echo "GOOGLE_DRIVE_FOLDER_ID=${GOOGLE_DRIVE_FOLDER_ID:-}" >> "$ENV_FILE"
+fi
 
 COMPOSE=("${DOCKER[@]}" compose --project-name akatruyen --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 on_error() {

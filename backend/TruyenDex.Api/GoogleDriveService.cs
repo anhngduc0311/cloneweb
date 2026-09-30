@@ -96,7 +96,7 @@ public class GoogleDriveService
                     }
                     if (string.IsNullOrWhiteSpace(loaded.RefreshToken))
                     {
-                        loaded.RefreshToken = Environment.GetEnvironmentVariable("GOOGLE_DRIVE_REFRESH_TOKEN") ?? "";
+                        loaded.RefreshToken = _config["Google:DriveRefreshToken"] ?? Environment.GetEnvironmentVariable("GOOGLE_DRIVE_REFRESH_TOKEN") ?? "";
                     }
                     return loaded;
                 }
@@ -107,7 +107,7 @@ public class GoogleDriveService
         return new GoogleDriveConfig
         {
             FolderId = _config["Google:DriveFolderId"] ?? Environment.GetEnvironmentVariable("GOOGLE_DRIVE_FOLDER_ID") ?? DefaultFolderId,
-            RefreshToken = Environment.GetEnvironmentVariable("GOOGLE_DRIVE_REFRESH_TOKEN") ?? ""
+            RefreshToken = _config["Google:DriveRefreshToken"] ?? Environment.GetEnvironmentVariable("GOOGLE_DRIVE_REFRESH_TOKEN") ?? ""
         };
     }
 
