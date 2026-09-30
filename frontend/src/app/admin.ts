@@ -488,10 +488,10 @@ export class AdminComponent implements OnInit {
       cover: '',
       description: '',
       genres: [],
-      genresInput: 'Action, Manhwa, Fantasy',
+      genresInput: 'Action, Manga, Fantasy',
       status: 'ongoing',
       sourceType: 'original',
-      country: 'vn',
+      country: 'jp',
       demographic: 'shounen',
       year: new Date().getFullYear(),
       featured: false,
@@ -712,6 +712,7 @@ export class AdminComponent implements OnInit {
         queryParams.set('folderId', currentFolderId);
       }
       queryParams.set('mangaTitle', this.currentManga.title?.trim() || 'Covers');
+      queryParams.set('isCover', 'true');
 
       const res = await fetch('/api/admin/drive/upload-images?' + queryParams.toString(), {
         method: 'POST',

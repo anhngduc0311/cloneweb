@@ -322,20 +322,32 @@ public class GoogleDriveService
             catch { }
         }
 
-        if (isConnected && string.IsNullOrWhiteSpace(FolderId))
+        if (isConnected)
         {
-            try
+            if (string.IsNullOrWhiteSpace(FolderId))
             {
-                var appFolderId = await GetOrCreateAppFolderAsync("akatruyen");
-                if (!string.IsNullOrEmpty(appFolderId))
+                try
                 {
-                    _driveConfig.FolderId = appFolderId;
+                    var appFolderId = await GetOrCreateAppFolderAsync("akatruyen");
+                    if (!string.IsNullOrEmpty(appFolderId))
+                    {
+                        _driveConfig.FolderId = appFolderId;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[GoogleDrive] Cannot auto-init akatruyen folder: {ex.Message}");
                 }
             }
-            catch (Exception ex)
+
+            _ = Task.Run(async () =>
             {
-                Console.WriteLine($"[GoogleDrive] Cannot auto-init akatruyen folder: {ex.Message}");
-            }
+                try
+                {
+                    await CleanupNestedCoverFoldersAsync();
+                }
+                catch { }
+            });
         }
 
         var activeFolderId = FolderId;
@@ -501,6 +513,106 @@ public class GoogleDriveService
         {
             Console.WriteLine($"[GoogleDrive] Error moving root folders: {ex.Message}");
         }
+    }
+
+    public async Task CleanupNestedCoverFoldersAsync(string? targetFolderId = null)
+    {
+        var token = await GetAccessTokenAsync();
+        if (string.IsNullOrEmpty(token)) return;
+
+        try
+        {
+            var baseId = !string.IsNullOrWhiteSpace(targetFolderId) ? targetFolderId : FolderId;
+            if (string.IsNullOrWhiteSpace(baseId) || baseId == "root" || baseId == DefaultFolderId)
+            {
+                baseId = await GetOrCreateAppFolderAsync("akatruyen");
+            }
+
+            // Find all chapter folders inside akatruyen
+            var query = $"'{baseId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"https://www.googleapis.com/drive/v3/files?q={Uri.EscapeDataString(query)}&fields=files(id,name)&pageSize=100&supportsAllDrives=true&includeItemsFromAllDrives=true");
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            var res = await _http.SendAsync(req);
+            if (!res.IsSuccessStatusCode) return;
+
+            var json = await res.Content.ReadFromJsonAsync<JsonNode>();
+            var folders = json?["files"]?.AsArray();
+            if (folders == null) return;
+
+            foreach (var chapFolder in folders)
+            {
+                var chapId = chapFolder?["id"]?.ToString();
+                var chapName = chapFolder?["name"]?.ToString() ?? "";
+                if (string.IsNullOrEmpty(chapId) || !chapName.Contains("Chap", StringComparison.OrdinalIgnoreCase)) continue;
+
+                // Look for nested 'Ảnh bìa' folders recursively inside this chapter folder
+                await FlattenNestedFolderAsync(chapId, chapId, "Ảnh bìa", token);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[GoogleDrive] CleanupNestedCoverFoldersAsync error: {ex.Message}");
+        }
+    }
+
+    private async Task FlattenNestedFolderAsync(string currentParentId, string rootChapFolderId, string targetSubfolderName, string token)
+    {
+        try
+        {
+            var query = $"'{currentParentId}' in parents and name = '{targetSubfolderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"https://www.googleapis.com/drive/v3/files?q={Uri.EscapeDataString(query)}&fields=files(id,name)&pageSize=10&supportsAllDrives=true&includeItemsFromAllDrives=true");
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            var res = await _http.SendAsync(req);
+            if (!res.IsSuccessStatusCode) return;
+
+            var json = await res.Content.ReadFromJsonAsync<JsonNode>();
+            var subfolders = json?["files"]?.AsArray();
+            if (subfolders == null || subfolders.Count == 0) return;
+
+            foreach (var sub in subfolders)
+            {
+                var subId = sub?["id"]?.ToString();
+                if (string.IsNullOrEmpty(subId)) continue;
+
+                // First check if there's an even deeper nested folder inside subId
+                await FlattenNestedFolderAsync(subId, rootChapFolderId, targetSubfolderName, token);
+
+                // Move all files inside subId up to rootChapFolderId
+                var fileQuery = $"'{subId}' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false";
+                using var fileReq = new HttpRequestMessage(HttpMethod.Get, $"https://www.googleapis.com/drive/v3/files?q={Uri.EscapeDataString(fileQuery)}&fields=files(id,name)&pageSize=100&supportsAllDrives=true&includeItemsFromAllDrives=true");
+                fileReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                var fileRes = await _http.SendAsync(fileReq);
+                if (fileRes.IsSuccessStatusCode)
+                {
+                    var fileJson = await fileRes.Content.ReadFromJsonAsync<JsonNode>();
+                    var innerFiles = fileJson?["files"]?.AsArray();
+                    if (innerFiles != null)
+                    {
+                        foreach (var inner in innerFiles)
+                        {
+                            var fId = inner?["id"]?.ToString();
+                            if (!string.IsNullOrEmpty(fId))
+                            {
+                                await MoveFileOrFolderAsync(fId, rootChapFolderId, subId, token);
+                                Console.WriteLine($"[GoogleDrive] Flattened file '{fId}' into chapter folder {rootChapFolderId}");
+                            }
+                        }
+                    }
+                }
+
+                // Delete or trash the now-empty subId
+                try
+                {
+                    using var trashReq = new HttpRequestMessage(HttpMethod.Patch, $"https://www.googleapis.com/drive/v3/files/{subId}?supportsAllDrives=true");
+                    trashReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                    trashReq.Content = new StringContent("{\"trashed\": true}", Encoding.UTF8, "application/json");
+                    await _http.SendAsync(trashReq);
+                    Console.WriteLine($"[GoogleDrive] Trashed nested folder '{targetSubfolderName}' ({subId})");
+                }
+                catch { }
+            }
+        }
+        catch { }
     }
 
     private async Task<string?> SearchFolderInParentAsync(string folderName, string parentId, string token)

@@ -399,14 +399,13 @@ app.MapGet("/api/catalog/home", async (int? page, int? pageSize, Catalog catalog
         {
             var customMangas = await db.Mangas
                 .AsNoTracking()
-                .Where(m => !m.IsDraft && !m.IsHidden)
+                .Where(m => !m.IsDraft && !m.IsHidden && !string.IsNullOrEmpty(m.SourceType))
                 .OrderByDescending(m => m.UpdatedAt)
                 .Take(size)
                 .ToListAsync();
 
             if (customMangas.Count > 0)
             {
-                var customIds = customMangas.Select(x => x.Id).ToHashSet();
                 var customCards = new List<MangaCard>();
                 foreach (var cm in customMangas)
                 {
@@ -418,7 +417,7 @@ app.MapGet("/api/catalog/home", async (int? page, int? pageSize, Catalog catalog
                         .Select(c => new ChapterCard(c.Id, c.MangaId, c.Title, c.Number, c.Language, c.PublishedAt, cm.ScanlationGroup))
                         .ToListAsync();
 
-                    customCards.Add(new MangaCard
+                    var card = new MangaCard
                     {
                         Id = cm.Id,
                         Title = cm.Title,
@@ -428,16 +427,26 @@ app.MapGet("/api/catalog/home", async (int? page, int? pageSize, Catalog catalog
                         Description = cm.Description,
                         Genres = cm.Genres,
                         Status = cm.Status,
-                        Country = cm.Country,
+                        Country = string.IsNullOrWhiteSpace(cm.Country) ? "jp" : cm.Country,
                         Demographic = cm.Demographic,
                         Year = cm.Year,
                         UpdatedAt = cm.UpdatedAt,
                         Chapters = chaps
-                    });
+                    };
+
+                    // Lọc nghiêm ngặt 100% Manga Nhật Bản cho trang chủ
+                    if (Catalog.IsJapaneseManga(card))
+                    {
+                        customCards.Add(card);
+                    }
                 }
 
-                var merged = customCards.Concat(homeResult.Items.Where(x => !customIds.Contains(x.Id))).Take(size).ToList();
-                homeResult = new CatalogPage(merged, homeResult.Total + customMangas.Count, p, size);
+                if (customCards.Count > 0)
+                {
+                    var customIds = customCards.Select(x => x.Id).ToHashSet();
+                    var merged = customCards.Concat(homeResult.Items.Where(x => !customIds.Contains(x.Id) && Catalog.IsJapaneseManga(x))).Take(size).ToList();
+                    homeResult = new CatalogPage(merged, homeResult.Total + customCards.Count, p, size);
+                }
             }
         }
         catch { }

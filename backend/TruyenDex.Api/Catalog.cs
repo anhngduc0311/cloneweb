@@ -158,13 +158,20 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         } catch (UpstreamException) { /* Statistics must not block reading. */ }
     }
 
+    public static bool IsJapaneseManga(MangaCard m)
+    {
+        if (m == null) return false;
+        var c = m.Country?.Trim().ToLowerInvariant();
+        if (c != "ja" && c != "jp") return false;
+        if (IsManhwaOrManhua(m)) return false;
+        return true;
+    }
+
     public static bool IsManhwaOrManhua(MangaCard m)
     {
         if (m == null) return false;
-        if (string.Equals(m.Country, "ko", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(m.Country, "zh", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(m.Country, "zh-hk", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(m.Country, "zh-ro", StringComparison.OrdinalIgnoreCase))
+        var c = m.Country?.Trim().ToLowerInvariant();
+        if (c == "ko" || c == "kr" || c == "zh" || c == "cn" || c == "zh-hk" || c == "zh-ro")
         {
             return true;
         }
@@ -177,6 +184,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
                 var tag = g.Trim();
                 if (tag.Equals("Manhwa", StringComparison.OrdinalIgnoreCase) ||
                     tag.Equals("Manhua", StringComparison.OrdinalIgnoreCase) ||
+                    tag.Equals("Webtoon", StringComparison.OrdinalIgnoreCase) ||
                     tag.Equals("Truyện Hàn Quốc", StringComparison.OrdinalIgnoreCase) ||
                     tag.Equals("Truyện Trung Quốc", StringComparison.OrdinalIgnoreCase) ||
                     tag.Equals("Truyen Han Quoc", StringComparison.OrdinalIgnoreCase) ||
@@ -335,129 +343,57 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
     public async Task<CatalogPage> Home(int page, int size)
     {
-        var cacheKey = $"catalog:home:v14:{page}:{size}";
+        var cacheKey = $"catalog:home:strict_ja_v3:{page}:{size}";
         var cachedPage = await CacheGet<CatalogPage>(cacheKey);
         if (cachedPage != null) return cachedPage;
 
         size = 28;
-        var mangaDexItems = new List<MangaCard>();
+        var mangaItems = new List<MangaCard>();
         int total = 0;
-
-        // Kick off TruyenGG fetch in parallel with MangaDex fetch
-        var ggTask = Task.Run(async () =>
-        {
-            try
-            {
-                var raw = await truyengg.GetLatest(page);
-                return raw.Where(m => !IsManhwaOrManhua(m)).ToList();
-            }
-            catch { return new List<MangaCard>(); }
-        });
 
         try
         {
-            var home = await Get($"/api/series/homepage?page={page}&limit={size}", true);
-            var rows = home["data"]?.AsArray();
-            if (rows != null && rows.Count > 0)
+            // 1. Fetch strictly Japanese manga from MangaDex ordered by latest uploaded chapter
+            var offset = Math.Max(0, (page - 1) * size);
+            var fetchLimit = Math.Min(size + 12, 100);
+            var path = $"/manga?limit={fetchLimit}&offset={offset}&includes[]=cover_art&includes[]=author&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&order[latestUploadedChapter]=desc&originalLanguage[]=ja&availableTranslatedLanguage[]=vi";
+            var result = await Get(path);
+            var rawItems = result["data"]!.AsArray().Select(x => Map(x!, isThumbnail: true)).ToList();
+            total = (int?)result["total"] ?? 50000;
+
+            foreach (var m in rawItems)
             {
-                var ids = rows.Select(x => S(x?["uuid"])).Where(x => !string.IsNullOrEmpty(x)).ToArray();
-                var response = await Get("/manga?limit=100&includes[]=cover_art&includes[]=author&" + string.Join("&", ids.Select(x => "ids[]=" + x)));
-                var map = response["data"]!.AsArray().Select(x => Map(x!, isThumbnail: true)).ToDictionary(x => x.Id.ToString());
-                foreach (var row in rows) {
-                    if (!map.TryGetValue(S(row?["uuid"]), out var m)) continue;
-                    if (IsManhwaOrManhua(m)) continue;
-                    // Preserve homepage order: last chapter update descending, not manga metadata update.
-                    m.UpdatedAt = Date(row?["last_chapter_updated_at"]);
-                    var rawChaps = row?["chapters"]?.AsArray().Select(c => {
-                        var chapTitle = S(c?["title"]);
-                        var numMatch = Regex.Match(chapTitle, @"(?:\b|[^\w\d])(?:chương|chapter|chap|ch|c)?[\s\._-]*(\d+(?:\.\d+)?)", RegexOptions.IgnoreCase);
-                        decimal num = 0;
-                        if (numMatch.Success)
-                        {
-                            decimal.TryParse(numMatch.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out num);
-                        }
-                        return new ChapterCard(Guid.Parse(S(c?["uuid"])), m.Id, chapTitle, num, "vi", Date(c?["md_updated_at"]));
-                    }).ToList() ?? [];
-                    m.Chapters = DeduplicateChapters(rawChaps, ascending: false).Take(3).ToList();
-                    mangaDexItems.Add(m);
+                if (IsJapaneseManga(m))
+                {
+                    mangaItems.Add(m);
+                    if (mangaItems.Count >= size) break;
                 }
-                await Stats(mangaDexItems);
-                total = (int?)home["total"] ?? mangaDexItems.Count;
+            }
+
+            if (mangaItems.Count > 0)
+            {
+                await Stats(mangaItems);
+                await PopulateMangaDexChapters(mangaItems, "vi");
+                await EnsureTopChapters(mangaItems, 3);
             }
         }
-        catch (Exception)
+        catch
         {
-            // Fallback to MangaDex latest uploaded chapters feed if TruyenDex custom homepage endpoint is temporarily unavailable
+            // Fallback: Query via Search with strictly originalLanguage 'ja'
             try
             {
                 var fallback = await Search(page, size, null, null, null, "ja", null, "vi", "latest", null);
-                if (fallback.Items.Count > 0)
-                {
-                    mangaDexItems = fallback.Items.Where(m => !IsManhwaOrManhua(m)).ToList();
-                    total = fallback.Total;
-                }
+                mangaItems = fallback.Items.Where(IsJapaneseManga).Take(size).ToList();
+                total = fallback.Total;
+                await PopulateMangaDexChapters(mangaItems, "vi");
+                await EnsureTopChapters(mangaItems, 3);
             }
             catch { }
         }
 
-        // Await TruyenGG items
-        var ggItems = await ggTask;
-
-        // Deduplication: if title or alternative title matches any existing item, prioritize the one with Chapter 1
-        var merged = new List<MangaCard>();
-        foreach (var m in mangaDexItems)
-        {
-            bool isDuplicate = false;
-            for (int i = 0; i < merged.Count; i++)
-            {
-                var existing = merged[i];
-                if (TruyenGg.IsSameManga(existing.Title, existing.AlternativeTitle, m.Title, m.AlternativeTitle))
-                {
-                    isDuplicate = true;
-                    // Prioritize story with chapter 1
-                    if (ShouldPreferCandidate(m, existing))
-                    {
-                        merged[i] = m;
-                    }
-                    break;
-                }
-            }
-            if (!isDuplicate)
-            {
-                merged.Add(m);
-            }
-        }
-
-        foreach (var gg in ggItems)
-        {
-            bool isDuplicate = false;
-            for (int i = 0; i < merged.Count; i++)
-            {
-                var existing = merged[i];
-                if (TruyenGg.IsSameManga(existing.Title, existing.AlternativeTitle, gg.Title, gg.AlternativeTitle))
-                {
-                    isDuplicate = true;
-                    // Prioritize story with chapter 1
-                    if (ShouldPreferCandidate(gg, existing))
-                    {
-                        merged[i] = gg;
-                    }
-                    break;
-                }
-            }
-            if (!isDuplicate)
-            {
-                merged.Add(gg);
-            }
-        }
-
-        // Exclude any remaining Manhwa/Manhua items, sort by newest chapter update descending, and take page size
-        merged = merged.Where(m => !IsManhwaOrManhua(m)).OrderByDescending(x => x.UpdatedAt).Take(size).ToList();
-        await EnsureTopChapters(merged, 3);
-
-        var result = new CatalogPage(merged, total + ggItems.Count, page, size);
-        await CacheSet(cacheKey, result, TimeSpan.FromMinutes(15));
-        return result;
+        var resultPage = new CatalogPage(mangaItems, total, page, size);
+        await CacheSet(cacheKey, resultPage, TimeSpan.FromMinutes(10));
+        return resultPage;
     }
 
     public async Task<CatalogPage> Featured(int size = 20)

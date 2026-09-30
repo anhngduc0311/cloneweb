@@ -735,7 +735,7 @@ public static class AdminEndpoints
             return Results.Ok(new { message = "Đã ngắt kết nối Google Drive thành công." });
         });
 
-        admin.MapPost("/drive/upload-images", async (IFormFileCollection files, string? folderId, string? mangaTitle, decimal? chapterNumber, GoogleDriveService drive) =>
+        admin.MapPost("/drive/upload-images", async (IFormFileCollection files, string? folderId, string? mangaTitle, decimal? chapterNumber, bool? isCover, GoogleDriveService drive) =>
         {
             if (files.Count == 0) return Results.BadRequest(new { message = "Không có file ảnh nào được gửi." });
 
@@ -751,36 +751,45 @@ public static class AdminEndpoints
                     targetFolderId = await drive.GetOrCreateAppFolderAsync("akatruyen");
                 }
 
-                // Automatically create/find subfolder for this chapter or cover
-                try
+                // Determine if a subfolder should be created/resolved:
+                // 1) Manga Cover upload (isCover == true)
+                // 2) Batch 1 of a chapter upload (chapterNumber.HasValue && chapterNumber.Value > 0)
+                // If neither, this is Batch 2, 3, 4... of chapter upload -> upload directly to targetFolderId without creating nested folders!
+                if (isCover == true)
                 {
-                    string subfolderName;
-                    var title = mangaTitle?.Trim();
-                    var hasValidTitle = !string.IsNullOrWhiteSpace(title) && !title.Equals("Covers", StringComparison.OrdinalIgnoreCase);
-
-                    if (chapterNumber.HasValue && chapterNumber.Value > 0)
+                    try
                     {
-                        subfolderName = hasValidTitle
-                            ? $"{title} - Chap {chapterNumber}"
-                            : $"Chap {chapterNumber}";
+                        var title = mangaTitle?.Trim();
+                        var hasValidTitle = !string.IsNullOrWhiteSpace(title) && !title.Equals("Covers", StringComparison.OrdinalIgnoreCase);
+                        var subfolderName = hasValidTitle ? $"{title} - Ảnh bìa" : "Ảnh bìa";
+                        var subId = await drive.FindOrCreateFolderAsync(subfolderName, targetFolderId);
+                        if (!string.IsNullOrEmpty(subId))
+                        {
+                            targetFolderId = subId;
+                        }
                     }
-                    else
+                    catch (Exception subEx)
                     {
-                        // Cover image upload
-                        subfolderName = hasValidTitle
-                            ? $"{title} - Ảnh bìa"
-                            : "Ảnh bìa";
-                    }
-
-                    var subId = await drive.FindOrCreateFolderAsync(subfolderName, targetFolderId);
-                    if (!string.IsNullOrEmpty(subId))
-                    {
-                        targetFolderId = subId;
+                        Console.WriteLine($"[GoogleDrive] Cannot find or create cover subfolder: {subEx.Message}");
                     }
                 }
-                catch (Exception subEx)
+                else if (chapterNumber.HasValue && chapterNumber.Value > 0)
                 {
-                    Console.WriteLine($"[GoogleDrive] Cannot find or create subfolder: {subEx.Message}");
+                    try
+                    {
+                        var title = mangaTitle?.Trim();
+                        var hasValidTitle = !string.IsNullOrWhiteSpace(title) && !title.Equals("Covers", StringComparison.OrdinalIgnoreCase);
+                        var subfolderName = hasValidTitle ? $"{title} - Chap {chapterNumber}" : $"Chap {chapterNumber}";
+                        var subId = await drive.FindOrCreateFolderAsync(subfolderName, targetFolderId);
+                        if (!string.IsNullOrEmpty(subId))
+                        {
+                            targetFolderId = subId;
+                        }
+                    }
+                    catch (Exception subEx)
+                    {
+                        Console.WriteLine($"[GoogleDrive] Cannot find or create chapter subfolder: {subEx.Message}");
+                    }
                 }
 
                 // Natural sort files by filename so pages are in correct sequence
