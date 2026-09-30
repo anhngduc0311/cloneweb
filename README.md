@@ -11,6 +11,8 @@ pwsh -NoProfile -File scripts/setup.ps1
 docker compose up -d --build
 ```
 
+docker compose -f compose.production.yaml down -v
+
 - Website: http://localhost:4200
 - API health: http://localhost:5080/api/health
 - PostgreSQL: `localhost:54329`, database/user: `truyendex`.
