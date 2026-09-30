@@ -136,7 +136,7 @@ export class AdminComponent implements OnInit {
   router = inject(Router);
 
   // Active navigation tab
-  activeTab = signal<'overview' | 'mangas' | 'chapters' | 'taxonomy' | 'users' | 'moderation' | 'logs'>('overview');
+  activeTab = signal<'overview' | 'mangas' | 'chapters' | 'drive' | 'taxonomy' | 'users' | 'moderation' | 'logs'>('overview');
 
   // Loading states
   loading = signal(false);
@@ -202,6 +202,58 @@ export class AdminComponent implements OnInit {
     content: '' // rich text for novels
   };
   uploadingImages = signal(false);
+  localUploadProgress = signal<{ current: number; total: number; percent: number; currentFile: string }>({
+    current: 0,
+    total: 0,
+    percent: 0,
+    currentFile: ''
+  });
+
+  // Google Drive Integration State
+  driveStatus = signal<{
+    connected: boolean;
+    folderId: string;
+    folderUrl: string;
+    email?: string;
+    name?: string;
+    hasClientId: boolean;
+    hasApiKey: boolean;
+    quota?: any;
+  } | null>(null);
+
+  uploadingToDrive = signal(false);
+  uploadingCoverToDrive = signal(false);
+  driveUploadProgress = signal<{ current: number; total: number; percent: number; currentFile: string }>({
+    current: 0,
+    total: 0,
+    percent: 0,
+    currentFile: ''
+  });
+
+  driveScanModalOpen = signal(false);
+  driveScanFolderUrl = signal('https://drive.google.com/drive/folders/1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9');
+  isScanningDrive = signal(false);
+  scannedDriveFiles = signal<any[]>([]);
+
+  driveConfigModalOpen = signal(false);
+  driveConfigFolderId = signal('1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9');
+  driveConfigManualToken = signal('');
+  driveConfigApiKey = signal('');
+  isSavingDriveConfig = signal(false);
+
+  get driveRedirectUri(): string {
+    if (typeof window !== 'undefined') {
+      return `${window.location.origin}/api/admin/drive/oauth-callback`;
+    }
+    return 'http://localhost:4200/api/admin/drive/oauth-callback';
+  }
+
+  copyDriveRedirectUri() {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(this.driveRedirectUri);
+      this.store.notify('Đã sao chép Authorized redirect URI vào clipboard!');
+    }
+  }
 
   // Chapter Pagination & Search State
   chapterPage = signal(1);
@@ -292,7 +344,18 @@ export class AdminComponent implements OnInit {
   async ngOnInit() {
     const ok = await this.checkPermission();
     if (ok) {
+      if (typeof window !== 'undefined') {
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('drive_connected') === '1') {
+          this.store.notify('Kết nối tài khoản Google Drive thành công!');
+          window.history.replaceState({}, '', window.location.pathname);
+        } else if (urlParams.get('drive_error')) {
+          this.store.notify('Lỗi kết nối Google Drive: ' + decodeURIComponent(urlParams.get('drive_error')!));
+          window.history.replaceState({}, '', window.location.pathname);
+        }
+      }
       void this.loadOverview();
+      void this.loadDriveStatus();
     }
   }
 
@@ -317,7 +380,7 @@ export class AdminComponent implements OnInit {
     return role === 'admin' || role === 'superadmin';
   }
 
-  switchTab(tab: 'overview' | 'mangas' | 'chapters' | 'taxonomy' | 'users' | 'moderation' | 'logs') {
+  switchTab(tab: 'overview' | 'mangas' | 'chapters' | 'drive' | 'taxonomy' | 'users' | 'moderation' | 'logs') {
     this.activeTab.set(tab);
     if (tab === 'overview') void this.loadOverview();
     else if (tab === 'mangas') void this.loadMangas();
@@ -325,6 +388,7 @@ export class AdminComponent implements OnInit {
       if (this.selectedMangaId()) void this.loadChapters(this.selectedMangaId());
       else void this.loadMangas();
     }
+    else if (tab === 'drive') void this.loadDriveStatus();
     else if (tab === 'taxonomy') void this.loadTaxonomy();
     else if (tab === 'users') void this.loadUsers();
     else if (tab === 'moderation') void this.loadModeration();
@@ -595,27 +659,60 @@ export class AdminComponent implements OnInit {
     }
   }
 
-  onPagesTextInput() {
-    const urls = this.currentChapter.pagesText
-      .split('\n')
-      .map((l: string) => l.trim())
-      .filter((l: string) => l.startsWith('http') || l.startsWith('/uploads'));
-    this.currentChapter.pagesList = urls;
+  formatDriveUrl(url: string): string {
+    if (!url) return '';
+    const match = url.match(/(?:drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)|lh3\.googleusercontent\.com\/d\/)([a-zA-Z0-9_-]{25,})/);
+    if (match) {
+      return `https://lh3.googleusercontent.com/d/${match[1]}`;
+    }
+    return url;
   }
 
-  async onFileUpload(event: Event) {
+  onPagesTextInput() {
+    const lines = this.currentChapter.pagesText
+      .split('\n')
+      .map((l: string) => l.trim())
+      .filter((l: string) => l.startsWith('http') || l.startsWith('/uploads') || l.startsWith('/api/'));
+    
+    const formatted = lines.map((l: string) => this.formatDriveUrl(l));
+    this.currentChapter.pagesList = formatted;
+  }
+
+  onCoverUrlChange(val: string) {
+    if (!val) return;
+    const formatted = this.formatDriveUrl(val.trim());
+    if (formatted !== val) {
+      this.currentManga.cover = formatted;
+    }
+  }
+
+  async onDriveCoverUpload(event: Event) {
     const input = event.target as HTMLInputElement;
     if (!input.files || input.files.length === 0) return;
 
-    this.uploadingImages.set(true);
+    if (!this.driveStatus()?.connected) {
+      this.store.notify('Google Drive chưa được liên kết. Vui lòng bấm "Kết nối Google Drive" để cấp quyền tải ảnh lên.');
+      this.driveConfigModalOpen.set(true);
+      input.value = '';
+      return;
+    }
+
+    const file = input.files[0];
+    this.uploadingCoverToDrive.set(true);
+
     try {
       const token = this.store.getToken();
       const formData = new FormData();
-      for (let i = 0; i < input.files.length; i++) {
-        formData.append('files', input.files[i]);
-      }
+      formData.append('files', file);
 
-      const res = await fetch('/api/admin/chapters/upload-images', {
+      const queryParams = new URLSearchParams();
+      if (this.driveStatus()?.folderId) {
+        queryParams.set('folderId', this.driveStatus()!.folderId);
+      }
+      queryParams.set('mangaTitle', this.currentManga.title?.trim() || 'Covers');
+      queryParams.set('chapterNumber', '0');
+
+      const res = await fetch('/api/admin/drive/upload-images?' + queryParams.toString(), {
         method: 'POST',
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {})
@@ -623,12 +720,288 @@ export class AdminComponent implements OnInit {
         body: formData
       });
 
-      if (!res.ok) throw new Error('Upload ảnh thất bại.');
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || 'Tải ảnh bìa lên Google Drive thất bại.');
+      }
+
       const data = await res.json();
-      const newUrls = data.urls || [];
-      this.currentChapter.pagesList = [...this.currentChapter.pagesList, ...newUrls];
+      if (data.urls && data.urls.length > 0) {
+        this.currentManga.cover = data.urls[0];
+        this.store.notify('Đã tải ảnh bìa lên Google Drive thành công!');
+      }
+    } catch (e: any) {
+      this.store.notify(e.message || 'Lỗi khi upload ảnh bìa lên Google Drive.');
+    } finally {
+      this.uploadingCoverToDrive.set(false);
+      input.value = '';
+    }
+  }
+
+  selectScannedCover(item: any) {
+    const url = item.directUrl || `https://lh3.googleusercontent.com/d/${item.id}`;
+    this.currentManga.cover = url;
+    this.store.notify(`Đã chọn ảnh "${item.name}" làm ảnh bìa truyện!`);
+  }
+
+  openChapterUploadForManga(manga: AdminManga) {
+    this.manageMangaChapters(manga);
+    this.openCreateChapterModal();
+  }
+
+  async loadDriveStatus() {
+    try {
+      const data = await this.api.request<any>('/admin/drive/status');
+      this.driveStatus.set(data);
+      if (data?.folderId) {
+        this.driveConfigFolderId.set(data.folderId);
+        this.driveScanFolderUrl.set(`https://drive.google.com/drive/folders/${data.folderId}`);
+      }
+    } catch { }
+  }
+
+  async connectGoogleDrive() {
+    try {
+      const redirectUri = `${window.location.origin}/api/admin/drive/oauth-callback`;
+      const res = await this.api.request<{ url: string }>('/admin/drive/auth-url?redirectUri=' + encodeURIComponent(redirectUri));
+      if (res?.url) {
+        window.location.href = res.url;
+      }
+    } catch (e: any) {
+      this.store.notify(e.message || 'Không thể tạo liên kết đăng nhập Google Drive.');
+    }
+  }
+
+  async disconnectGoogleDrive() {
+    if (!confirm('Bạn có chắc muốn ngắt kết nối tài khoản Google Drive hiện tại?')) return;
+    try {
+      await this.api.request('/admin/drive/disconnect', 'POST');
+      await this.loadDriveStatus();
+      this.store.notify('Đã ngắt kết nối Google Drive.');
+    } catch (e: any) {
+      this.store.notify(e.message || 'Lỗi khi ngắt kết nối Google Drive.');
+    }
+  }
+
+  async saveDriveConfig() {
+    this.isSavingDriveConfig.set(true);
+    try {
+      const payload: any = {
+        folderId: this.driveConfigFolderId().trim()
+      };
+      if (this.driveConfigManualToken().trim()) {
+        payload.refreshToken = this.driveConfigManualToken().trim();
+      }
+      if (this.driveConfigApiKey().trim()) {
+        payload.apiKey = this.driveConfigApiKey().trim();
+      }
+      const updated = await this.api.request<any>('/admin/drive/config', 'POST', payload);
+      this.driveStatus.set(updated);
+      this.store.notify('Cập nhật cấu hình Google Drive thành công!');
+      this.driveConfigModalOpen.set(false);
+      this.driveConfigManualToken.set('');
+    } catch (e: any) {
+      this.store.notify(e.message || 'Lỗi khi lưu cấu hình Google Drive.');
+    } finally {
+      this.isSavingDriveConfig.set(false);
+    }
+  }
+
+  async onDriveFileUpload(event: Event) {
+    const input = event.target as HTMLInputElement;
+    if (!input.files || input.files.length === 0) return;
+
+    if (!this.driveStatus()?.connected) {
+      this.store.notify('Google Drive chưa được liên kết. Vui lòng bấm "Kết nối Google Drive" để cấp quyền tải ảnh lên.');
+      this.driveConfigModalOpen.set(true);
+      input.value = '';
+      return;
+    }
+
+    const files = Array.from(input.files).sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+    );
+
+    this.uploadingToDrive.set(true);
+    this.driveUploadProgress.set({
+      current: 0,
+      total: files.length,
+      percent: 0,
+      currentFile: `Chuẩn bị tải ${files.length} ảnh lên Google Drive...`
+    });
+
+    try {
+      const token = this.store.getToken();
+      let activeFolderId = this.driveStatus()?.folderId || '';
+      const allUrls: string[] = [];
+      const batchSize = 3;
+
+      for (let i = 0; i < files.length; i += batchSize) {
+        const batch = files.slice(i, i + batchSize);
+        const formData = new FormData();
+        batch.forEach(f => formData.append('files', f));
+
+        const queryParams = new URLSearchParams();
+        if (activeFolderId) queryParams.set('folderId', activeFolderId);
+        if (i === 0) {
+          if (this.selectedManga()?.title) {
+            queryParams.set('mangaTitle', this.selectedManga()!.title);
+          }
+          if (this.currentChapter.number) {
+            queryParams.set('chapterNumber', String(this.currentChapter.number));
+          }
+        }
+
+        this.driveUploadProgress.set({
+          current: i,
+          total: files.length,
+          percent: Math.round((i / files.length) * 100),
+          currentFile: `Đang tải ${batch[0].name} (${i + 1}/${files.length})...`
+        });
+
+        const res = await fetch('/api/admin/drive/upload-images?' + queryParams.toString(), {
+          method: 'POST',
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: formData
+        });
+
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.message || `Tải ảnh nhóm ${Math.floor(i / batchSize) + 1} lên Google Drive thất bại.`);
+        }
+
+        const data = await res.json();
+        if (data.folderId) {
+          activeFolderId = data.folderId;
+        }
+        const batchUrls = data.urls || [];
+        allUrls.push(...batchUrls);
+      }
+
+      this.currentChapter.pagesList = [...this.currentChapter.pagesList, ...allUrls];
       this.currentChapter.pagesText = this.currentChapter.pagesList.join('\n');
-      this.store.notify(`Đã tải lên ${newUrls.length} ảnh thành công!`);
+
+      this.driveUploadProgress.set({
+        current: files.length,
+        total: files.length,
+        percent: 100,
+        currentFile: 'Hoàn tất!'
+      });
+
+      this.store.notify(`Đã upload thành công ${allUrls.length} ảnh lên Google Drive!`);
+    } catch (e: any) {
+      this.store.notify(e.message || 'Lỗi khi upload lên Google Drive.');
+    } finally {
+      this.uploadingToDrive.set(false);
+      input.value = '';
+    }
+  }
+
+  openDriveScanModal() {
+    if (this.driveStatus()?.folderId) {
+      this.driveScanFolderUrl.set(`https://drive.google.com/drive/folders/${this.driveStatus()!.folderId}`);
+    }
+    this.scannedDriveFiles.set([]);
+    this.driveScanModalOpen.set(true);
+  }
+
+  async scanDriveFolder() {
+    const urlOrId = this.driveScanFolderUrl().trim();
+    if (!urlOrId) {
+      this.store.notify('Vui lòng nhập link hoặc ID thư mục Google Drive.');
+      return;
+    }
+
+    this.isScanningDrive.set(true);
+    try {
+      const res = await this.api.request<any>('/admin/drive/scan-folder', 'POST', { folderUrlOrId: urlOrId });
+      const items = res.items || [];
+      this.scannedDriveFiles.set(items);
+      if (items.length === 0) {
+        this.store.notify('Không tìm thấy file ảnh nào trong thư mục này.');
+      } else {
+        this.store.notify(`Đã tìm thấy ${items.length} ảnh trong thư mục Google Drive!`);
+      }
+    } catch (e: any) {
+      this.store.notify(e.message || 'Lỗi khi quét thư mục Google Drive.');
+    } finally {
+      this.isScanningDrive.set(false);
+    }
+  }
+
+  importScannedDriveFiles() {
+    const scanned = this.scannedDriveFiles();
+    if (scanned.length === 0) return;
+    const urls = scanned.map(x => x.directUrl || `https://lh3.googleusercontent.com/d/${x.id}`);
+    this.currentChapter.pagesList = [...this.currentChapter.pagesList, ...urls];
+    this.currentChapter.pagesText = this.currentChapter.pagesList.join('\n');
+    this.store.notify(`Đã thêm ${urls.length} ảnh từ Google Drive vào chương!`);
+    this.driveScanModalOpen.set(false);
+    this.scannedDriveFiles.set([]);
+  }
+
+  async onFileUpload(event: Event) {
+    const input = event.target as HTMLInputElement;
+    if (!input.files || input.files.length === 0) return;
+
+    const files = Array.from(input.files).sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+    );
+
+    this.uploadingImages.set(true);
+    this.localUploadProgress.set({
+      current: 0,
+      total: files.length,
+      percent: 0,
+      currentFile: `Chuẩn bị tải ${files.length} ảnh lên máy chủ...`
+    });
+
+    try {
+      const token = this.store.getToken();
+      const allUrls: string[] = [];
+      const batchSize = 5;
+
+      for (let i = 0; i < files.length; i += batchSize) {
+        const batch = files.slice(i, i + batchSize);
+        const formData = new FormData();
+        batch.forEach(f => formData.append('files', f));
+
+        this.localUploadProgress.set({
+          current: i,
+          total: files.length,
+          percent: Math.round((i / files.length) * 100),
+          currentFile: `Đang tải ${batch[0].name} (${i + 1}/${files.length})...`
+        });
+
+        const res = await fetch('/api/admin/chapters/upload-images', {
+          method: 'POST',
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: formData
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || `Lỗi tải ảnh ở nhóm ${Math.floor(i / batchSize) + 1}`);
+        }
+
+        const data = await res.json();
+        const batchUrls = data.urls || [];
+        allUrls.push(...batchUrls);
+      }
+
+      this.currentChapter.pagesList = [...this.currentChapter.pagesList, ...allUrls];
+      this.currentChapter.pagesText = this.currentChapter.pagesList.join('\n');
+      this.localUploadProgress.set({
+        current: files.length,
+        total: files.length,
+        percent: 100,
+        currentFile: 'Hoàn tất!'
+      });
+      this.store.notify(`Đã tải lên thành công ${allUrls.length} ảnh lên máy chủ!`);
     } catch (e: any) {
       this.store.notify(e.message || 'Lỗi khi upload ảnh.');
     } finally {

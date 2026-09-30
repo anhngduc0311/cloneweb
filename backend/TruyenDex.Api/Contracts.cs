@@ -25,3 +25,6 @@ public record BannedKeywordRequest(string Keyword, string? Action);
 public record ReportRequest(Guid? MangaId, Guid? ChapterId, Guid? CommentId, string Type, string Reason);
 public record UpdateReportRequest(string Status, string? Notes);
 public record SystemLogRequest(string Level, string Source, string Message);
+public record DriveCallbackRequest(string Code, string RedirectUri);
+public record DriveConfigRequest(string? FolderId, string? RefreshToken, string? ApiKey);
+public record DriveScanRequest(string? FolderUrlOrId);

@@ -15,6 +15,18 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.Local.json", true, true).AddEnvironmentVariables();
 var key = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("Run scripts/setup.ps1 or configure Jwt__Key.");
 if (key.Length < 32) throw new InvalidOperationException("Jwt key must be at least 32 characters.");
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    serverOptions.Limits.MaxRequestBodySize = 524_288_000; // 500 MB
+});
+
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 524_288_000; // 500 MB
+    options.ValueLengthLimit = int.MaxValue;
+    options.MultipartHeadersLengthLimit = int.MaxValue;
+});
+
 builder.Services.AddDbContext<AppDb>(o => o.UseNpgsql(builder.Configuration.GetConnectionString("Database")));
 builder.Services.AddMemoryCache(o => o.SizeLimit = 1000);
 builder.Services.AddHttpClient();
@@ -42,6 +54,7 @@ builder.Services.AddHttpClient<TruyenGg>(c => { c.Timeout = TimeSpan.FromSeconds
 builder.Services.AddSingleton<TruyenGg>();
 builder.Services.AddScoped<Catalog>();
 builder.Services.AddScoped<PasswordHasher<AppUser>>();
+builder.Services.AddSingleton<GoogleDriveService>();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(o => o.TokenValidationParameters = new() {
     ValidateIssuer = true, ValidateAudience = true, ValidateLifetime = true, ValidateIssuerSigningKey = true,
     ValidIssuer = "truyendex-local", ValidAudience = "truyendex-web", IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)), ClockSkew = TimeSpan.FromSeconds(30)
@@ -68,6 +81,40 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseStaticFiles();
+
+app.MapGet("/api/uploads/{**slug}", (string slug, IWebHostEnvironment env) =>
+{
+    var webRoot = env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+    var filePath = Path.Combine(webRoot, "uploads", slug.Replace('/', Path.DirectorySeparatorChar));
+    if (!File.Exists(filePath)) return Results.NotFound();
+    var ext = Path.GetExtension(filePath).ToLowerInvariant();
+    var ct = ext switch
+    {
+        ".png" => "image/png",
+        ".webp" => "image/webp",
+        ".gif" => "image/gif",
+        ".avif" => "image/avif",
+        _ => "image/jpeg"
+    };
+    return Results.File(filePath, ct);
+});
+
+app.MapGet("/uploads/{**slug}", (string slug, IWebHostEnvironment env) =>
+{
+    var webRoot = env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+    var filePath = Path.Combine(webRoot, "uploads", slug.Replace('/', Path.DirectorySeparatorChar));
+    if (!File.Exists(filePath)) return Results.NotFound();
+    var ext = Path.GetExtension(filePath).ToLowerInvariant();
+    var ct = ext switch
+    {
+        ".png" => "image/png",
+        ".webp" => "image/webp",
+        ".gif" => "image/gif",
+        ".avif" => "image/avif",
+        _ => "image/jpeg"
+    };
+    return Results.File(filePath, ct);
+});
 Guid UserId(ClaimsPrincipal u) => Guid.Parse(u.FindFirstValue(ClaimTypes.NameIdentifier)!);
 object Session(AppUser u) {
     var jwt = new JwtSecurityToken("truyendex-local", "truyendex-web", [new(ClaimTypes.NameIdentifier, u.Id.ToString()), new(ClaimTypes.Name, u.Name), new(ClaimTypes.Role, u.Role)],
@@ -340,27 +387,233 @@ app.MapGet("/api/auth/me", async (ClaimsPrincipal user, AppDb db) => {
     var u = await db.Users.FindAsync(UserId(user));
     return u is null ? Results.Unauthorized() : Results.Ok(new { u.Id, u.Name, u.Email, u.Role, u.Coins, u.IsBanned });
 }).RequireAuthorization();
-app.MapGet("/api/catalog/home", async (int? page, int? pageSize, Catalog catalog) => {
+app.MapGet("/api/catalog/home", async (int? page, int? pageSize, Catalog catalog, AppDb db) => {
     if ((page ?? 1) is < 1 or > 5000) return Results.BadRequest(new { message = "Trang không hợp lệ." });
-    return Results.Ok(await catalog.Home(page ?? 1, Math.Clamp(pageSize ?? 28, 1, 28)));
+    var p = page ?? 1;
+    var size = Math.Clamp(pageSize ?? 28, 1, 28);
+    var homeResult = await catalog.Home(p, size);
+
+    if (p == 1)
+    {
+        try
+        {
+            var customMangas = await db.Mangas
+                .AsNoTracking()
+                .Where(m => !m.IsDraft && !m.IsHidden)
+                .OrderByDescending(m => m.UpdatedAt)
+                .Take(size)
+                .ToListAsync();
+
+            if (customMangas.Count > 0)
+            {
+                var customIds = customMangas.Select(x => x.Id).ToHashSet();
+                var customCards = new List<MangaCard>();
+                foreach (var cm in customMangas)
+                {
+                    var chaps = await db.Chapters
+                        .AsNoTracking()
+                        .Where(c => c.MangaId == cm.Id)
+                        .OrderByDescending(c => c.Number)
+                        .Take(3)
+                        .Select(c => new ChapterCard(c.Id, c.MangaId, c.Title, c.Number, c.Language, c.PublishedAt, cm.ScanlationGroup))
+                        .ToListAsync();
+
+                    customCards.Add(new MangaCard
+                    {
+                        Id = cm.Id,
+                        Title = cm.Title,
+                        AlternativeTitle = cm.AlternativeTitle,
+                        Author = cm.Author,
+                        Cover = cm.Cover,
+                        Description = cm.Description,
+                        Genres = cm.Genres,
+                        Status = cm.Status,
+                        Country = cm.Country,
+                        Demographic = cm.Demographic,
+                        Year = cm.Year,
+                        UpdatedAt = cm.UpdatedAt,
+                        Chapters = chaps
+                    });
+                }
+
+                var merged = customCards.Concat(homeResult.Items.Where(x => !customIds.Contains(x.Id))).Take(size).ToList();
+                homeResult = new CatalogPage(merged, homeResult.Total + customMangas.Count, p, size);
+            }
+        }
+        catch { }
+    }
+    return Results.Ok(homeResult);
 });
 app.MapGet("/api/catalog/featured", async (int? limit, Catalog catalog) => {
     return Results.Ok(await catalog.Featured(Math.Clamp(limit ?? 20, 1, 50)));
 });
-app.MapGet("/api/catalog/search", async (string? page, string? pageSize, string? q, string? genre, string? status, string? country, string? demographic, string? language, string? sort, string? year, Catalog catalog) => {
+app.MapGet("/api/catalog/search", async (string? page, string? pageSize, string? q, string? genre, string? status, string? country, string? demographic, string? language, string? sort, string? year, Catalog catalog, AppDb db) => {
     var p = int.TryParse(page, out var pi) ? Math.Max(1, pi) : 1;
     var size = int.TryParse(pageSize, out var si) ? Math.Clamp(si, 1, 28) : 24;
     var y = int.TryParse(year, out var yi) && yi is >= 1900 and <= 2100 ? yi : (int?)null;
     if (p < 1 || (long)p * size > 10000 || q?.Length > 250) return Results.BadRequest(new { message = "Bộ lọc hoặc trang không hợp lệ." });
-    return Results.Ok(await catalog.Search(p, size, q, genre, status, country, demographic, language, sort, y));
+    
+    var res = await catalog.Search(p, size, q, genre, status, country, demographic, language, sort, y);
+
+    // If searching by keyword and page 1, check local DB mangas as well
+    if (p == 1 && !string.IsNullOrWhiteSpace(q))
+    {
+        try
+        {
+            var kw = q.Trim().ToLower();
+            var localMatches = await db.Mangas
+                .AsNoTracking()
+                .Where(m => !m.IsHidden && (m.Title.ToLower().Contains(kw) || m.AlternativeTitle.ToLower().Contains(kw)))
+                .OrderByDescending(m => m.UpdatedAt)
+                .Take(5)
+                .ToListAsync();
+
+            if (localMatches.Count > 0)
+            {
+                var existingIds = res.Items.Select(x => x.Id).ToHashSet();
+                var localCards = new List<MangaCard>();
+                foreach (var lm in localMatches.Where(x => !existingIds.Contains(x.Id)))
+                {
+                    localCards.Add(new MangaCard
+                    {
+                        Id = lm.Id,
+                        Title = lm.Title,
+                        AlternativeTitle = lm.AlternativeTitle,
+                        Author = lm.Author,
+                        Cover = lm.Cover,
+                        Description = lm.Description,
+                        Genres = lm.Genres,
+                        Status = lm.Status,
+                        Country = lm.Country,
+                        Demographic = lm.Demographic,
+                        Year = lm.Year,
+                        UpdatedAt = lm.UpdatedAt
+                    });
+                }
+                if (localCards.Count > 0)
+                {
+                    var combined = localCards.Concat(res.Items).Take(size).ToList();
+                    res = new CatalogPage(combined, res.Total + localCards.Count, p, size);
+                }
+            }
+        }
+        catch { }
+    }
+
+    return Results.Ok(res);
 });
 app.MapGet("/api/catalog/tags", (Catalog catalog) => catalog.Tags());
-app.MapGet("/api/catalog/{id:guid}", async (Guid id, Catalog catalog, AppDb db) => { var m = await catalog.Detail(id); await Remember(db, m); return m; });
-app.MapGet("/api/catalog/{id:guid}/chapters", async (Guid id, string? language, int? page, bool? ascending, Catalog catalog) => {
+app.MapGet("/api/catalog/{id:guid}", async (Guid id, Catalog catalog, AppDb db) => {
+    var dbManga = await db.Mangas.FindAsync(id);
+    if (dbManga != null)
+    {
+        var chaps = await db.Chapters
+            .AsNoTracking()
+            .Where(c => c.MangaId == id)
+            .OrderByDescending(c => c.Number)
+            .Take(3)
+            .Select(c => new ChapterCard(c.Id, c.MangaId, c.Title, c.Number, c.Language, c.PublishedAt, dbManga.ScanlationGroup))
+            .ToListAsync();
+
+        var card = new MangaCard
+        {
+            Id = dbManga.Id,
+            Title = dbManga.Title,
+            AlternativeTitle = dbManga.AlternativeTitle,
+            Author = dbManga.Author,
+            Cover = dbManga.Cover,
+            Description = dbManga.Description,
+            Genres = dbManga.Genres,
+            Status = dbManga.Status,
+            Country = dbManga.Country,
+            Demographic = dbManga.Demographic,
+            Year = dbManga.Year,
+            UpdatedAt = dbManga.UpdatedAt,
+            Chapters = chaps
+        };
+        return Results.Ok(card);
+    }
+
+    var m = await catalog.Detail(id);
+    await Remember(db, m);
+    return Results.Ok(m);
+});
+app.MapGet("/api/catalog/{id:guid}/chapters", async (Guid id, string? language, int? page, bool? ascending, AppDb db, Catalog catalog) => {
     if ((page ?? 1) is < 1 or > 100) return Results.BadRequest(new { message = "Trang chương không hợp lệ." });
+
+    var dbQuery = db.Chapters.AsNoTracking().Where(c => c.MangaId == id);
+    var dbCount = await dbQuery.CountAsync();
+    if (dbCount > 0)
+    {
+        var p = page ?? 1;
+        const int size = 100;
+        var ordered = ascending == true
+            ? dbQuery.OrderBy(c => c.Number).ThenBy(c => c.PublishedAt)
+            : dbQuery.OrderByDescending(c => c.Number).ThenByDescending(c => c.PublishedAt);
+
+        var cards = await ordered
+            .Skip((p - 1) * size)
+            .Take(size)
+            .Select(c => new ChapterCard(c.Id, c.MangaId, c.Title, c.Number, c.Language, c.PublishedAt, ""))
+            .ToListAsync();
+
+        return Results.Ok(new ChapterPage(cards, dbCount, p, size));
+    }
+
     return Results.Ok(await catalog.Chapters(id, language ?? "vi", page ?? 1, ascending ?? false));
 });
 app.MapGet("/api/chapters/{id:guid}", async (Guid id, Catalog catalog, AppDb db) => {
+    var dbChapter = await db.Chapters.Include(x => x.Manga).FirstOrDefaultAsync(x => x.Id == id);
+    if (dbChapter != null)
+    {
+        var manga = dbChapter.Manga;
+        var mangaCard = new MangaCard
+        {
+            Id = manga.Id,
+            Title = manga.Title,
+            AlternativeTitle = manga.AlternativeTitle,
+            Author = manga.Author,
+            Cover = manga.Cover,
+            Description = manga.Description,
+            Genres = manga.Genres,
+            Status = manga.Status,
+            Country = manga.Country,
+            Demographic = manga.Demographic,
+            Year = manga.Year,
+            UpdatedAt = manga.UpdatedAt
+        };
+
+        var curChapCard = new ChapterCard(
+            dbChapter.Id,
+            dbChapter.MangaId,
+            dbChapter.Title,
+            dbChapter.Number,
+            dbChapter.Language,
+            dbChapter.PublishedAt,
+            manga.ScanlationGroup
+        );
+
+        var siblingChapters = await db.Chapters
+            .AsNoTracking()
+            .Where(x => x.MangaId == dbChapter.MangaId)
+            .OrderBy(x => x.Number)
+            .Select(x => new ChapterCard(x.Id, x.MangaId, x.Title, x.Number, x.Language, x.PublishedAt, manga.ScanlationGroup))
+            .ToListAsync();
+
+        var normalizedPages = (dbChapter.Pages ?? [])
+            .Select(GoogleDriveService.FormatViewUrl)
+            .ToArray();
+
+        return Results.Ok(new ReaderData(
+            curChapCard,
+            mangaCard,
+            normalizedPages,
+            normalizedPages,
+            null,
+            siblingChapters
+        ));
+    }
+
     var r = await catalog.Read(id);
     try { await Remember(db, r.Manga); } catch { }
     var c = r.Chapter;
@@ -370,7 +623,16 @@ app.MapGet("/api/chapters/{id:guid}", async (Guid id, Catalog catalog, AppDb db)
             VALUES ({c.Id},{c.MangaId},{c.Number},{c.Title},{c.Language},{Array.Empty<string>()},{c.PublishedAt}) ON CONFLICT ("Id") DO NOTHING
             """);
     } catch { }
-    return r;
+    return Results.Ok(r);
+});
+app.MapGet("/api/drive/image/{fileId}", async (string fileId, GoogleDriveService drive, HttpContext ctx, CancellationToken ct) => {
+    try {
+        var (stream, contentType) = await drive.GetFileStreamAsync(fileId, ct);
+        ctx.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+        return Results.Stream(stream, contentType);
+    } catch {
+        return Results.Redirect($"https://lh3.googleusercontent.com/d/{fileId}");
+    }
 });
 app.MapGet("/api/library", async (ClaimsPrincipal user, AppDb db) => {
     var uid = UserId(user);

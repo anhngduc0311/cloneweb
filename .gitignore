@@ -4,8 +4,29 @@
 **/obj/
 **/.angular/
 .env
-.env.production*
+.env.*
+!.env.example
 .deploy.lock
 *.log
 .local/
 backend/TruyenDex.Api/appsettings.Local.json
+backend/TruyenDex.Api/google-drive.json
+
+# User Uploaded Media
+**/wwwroot/uploads/
+**/uploads/
+!**/wwwroot/.gitkeep
+
+# IDE & Editor
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# OS
+Thumbs.db
+[Dd]esktop.ini
+.DS_Store
+

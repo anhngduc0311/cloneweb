@@ -1,2 +1,15 @@
-{ "/api": { "target": "http://127.0.0.1:5077", "secure": false, "changeOrigin": true } }
+{
+  "/api": {
+    "target": "http://127.0.0.1:5077",
+    "secure": false,
+    "changeOrigin": true,
+    "xfwd": true
+  },
+  "/uploads": {
+    "target": "http://127.0.0.1:5077",
+    "secure": false,
+    "changeOrigin": true,
+    "xfwd": true
+  }
+}
 

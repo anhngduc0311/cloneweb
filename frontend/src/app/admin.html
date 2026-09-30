@@ -57,6 +57,16 @@
           }
         </button>
 
+        <button class="nav-item" [class.active]="activeTab() === 'drive'" (click)="switchTab('drive')">
+          <app-icon name="cloud"/>
+          <span>Google Drive</span>
+          @if(driveStatus()?.connected){
+            <span class="nav-badge success">Live</span>
+          }@else{
+            <span class="nav-badge alert">Chưa kết nối</span>
+          }
+        </button>
+
         <button class="nav-item" [class.active]="activeTab() === 'taxonomy'" (click)="switchTab('taxonomy')">
           <app-icon name="tag"/>
           <span>Phân loại & Taxonomy</span>
@@ -336,9 +346,53 @@
               <p class="pane-subtitle">Thêm mới, sửa đổi thông tin, điều chỉnh trạng thái và phân quyền nguồn truyện</p>
             </div>
             <div class="pane-actions">
+              <button class="btn-action-drive" (click)="openDriveScanModal()">
+                <app-icon name="folder"/> <span>Quét từ Drive</span>
+              </button>
               <button class="btn-primary" (click)="openCreateMangaModal()">
                 <app-icon name="plus"/> <span>Thêm truyện mới</span>
               </button>
+            </div>
+          </div>
+
+          <!-- Google Drive Status Banner on Manga List -->
+          <div class="manga-list-drive-banner glass-card" [class.connected]="driveStatus()?.connected">
+            <div class="drive-banner-left">
+              <div class="drive-icon-badge">
+                <app-icon name="cloud"/>
+              </div>
+              <div class="drive-banner-info">
+                <div class="drive-banner-title">
+                  <strong>Lưu trữ Google Drive</strong>
+                  <span class="status-indicator" [class.online]="driveStatus()?.connected">
+                    {{ driveStatus()?.connected ? 'Đang hoạt động' : 'Chưa kết nối' }}
+                  </span>
+                </div>
+                <div class="drive-banner-desc">
+                  Thư mục đích: <code>{{ driveStatus()?.folderId || '1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9' }}</code>
+                  @if(driveStatus()?.email){
+                    <span class="dot-sep">•</span>
+                    <span>{{ driveStatus()?.email }}</span>
+                  }
+                </div>
+              </div>
+            </div>
+            <div class="drive-banner-actions">
+              <a [href]="driveStatus()?.folderUrl || 'https://drive.google.com/drive/folders/1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9'" target="_blank" rel="noopener" class="btn-banner-link">
+                <app-icon name="link"/> <span>Mở trên Drive</span>
+              </a>
+              <button type="button" class="btn-banner-scan" (click)="openDriveScanModal()">
+                <app-icon name="folder"/> <span>Quét ảnh</span>
+              </button>
+              @if(!driveStatus()?.connected){
+                <button type="button" class="btn-banner-connect" (click)="connectGoogleDrive()">
+                  <app-icon name="cloud"/> <span>Kết nối ngay</span>
+                </button>
+              }@else{
+                <button type="button" class="btn-banner-config" (click)="driveConfigModalOpen.set(true)">
+                  <app-icon name="settings"/> <span>Cài đặt</span>
+                </button>
+              }
             </div>
           </div>
 
@@ -443,6 +497,9 @@
                     <td>{{ago(m.updatedAt)}}</td>
                     <td class="text-right">
                       <div class="action-buttons">
+                        <button class="icon-btn-action highlight-drive" (click)="openChapterUploadForManga(m)" title="Tải chương lên Google Drive">
+                          <app-icon name="cloud"/>
+                        </button>
                         <button class="icon-btn-action" (click)="manageMangaChapters(m)" title="Quản lý các chương">
                           <app-icon name="layers"/>
                         </button>
@@ -702,6 +759,146 @@
               </div>
             }
           }
+        </div>
+      }
+
+      <!-- ============================================================= -->
+      <!-- TAB: GOOGLE DRIVE STORAGE -->
+      <!-- ============================================================= -->
+      @if(activeTab() === 'drive'){
+        <div class="tab-pane fade-in">
+          <div class="pane-header">
+            <div>
+              <h1 class="pane-title">Lưu trữ Google Drive (Cloud Storage)</h1>
+              <p class="pane-subtitle">Hệ thống lưu trữ ảnh bìa và các tập truyện không giới hạn, phân phối qua Google CDN tốc độ cao</p>
+            </div>
+            <div class="pane-actions">
+              <button class="btn-secondary" (click)="loadDriveStatus()"><app-icon name="refresh"/> <span>Làm mới</span></button>
+              <button class="btn-primary" (click)="driveConfigModalOpen.set(true)">
+                <app-icon name="settings"/> <span>Cấu hình Google Drive</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Status Cards Grid -->
+          <div class="kpi-grid mb-6">
+            <div class="kpi-card glass-card">
+              <div class="kpi-header">
+                <span class="kpi-label">TRẠNG THÁI KẾT NỐI</span>
+                <span class="kpi-icon-wrap" [style.color]="driveStatus()?.connected ? '#34d399' : '#f87171'">
+                  <app-icon name="cloud"/>
+                </span>
+              </div>
+              <div class="kpi-value" [style.color]="driveStatus()?.connected ? '#34d399' : '#f87171'">
+                {{ driveStatus()?.connected ? 'Đã kết nối' : 'Chưa kết nối' }}
+              </div>
+              <div class="kpi-meta">
+                <span class="kpi-sub">{{ driveStatus()?.email || 'Chưa liên kết tài khoản' }}</span>
+              </div>
+            </div>
+
+            <div class="kpi-card glass-card">
+              <div class="kpi-header">
+                <span class="kpi-label">THƯ MỤC LƯU TRỮ CHÍNH</span>
+                <span class="kpi-icon-wrap manga-icon"><app-icon name="folder"/></span>
+              </div>
+              <div class="kpi-value" style="font-size: 1.05rem; word-break: break-all;">
+                {{ driveStatus()?.folderId || '1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9' }}
+              </div>
+              <div class="kpi-meta">
+                <a [href]="driveStatus()?.folderUrl || 'https://drive.google.com/drive/folders/1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9'" target="_blank" rel="noopener" class="highlight-link">
+                  <app-icon name="link"/> Mở thư mục trên Google Drive
+                </a>
+              </div>
+            </div>
+
+            <div class="kpi-card glass-card">
+              <div class="kpi-header">
+                <span class="kpi-label">CDN & HIỂN THỊ</span>
+                <span class="kpi-icon-wrap views-icon"><app-icon name="fire"/></span>
+              </div>
+              <div class="kpi-value" style="color: #38bdf8; font-size: 1.2rem;">
+                Google CDN
+              </div>
+              <div class="kpi-meta">
+                <span class="kpi-sub"><code>lh3.googleusercontent.com</code> + Proxy</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Actions & Guide Box -->
+          <div class="dashboard-columns mb-6">
+            <div class="dash-box glass-card">
+              <div class="dash-box-header">
+                <h3 class="dash-box-title"><app-icon name="folder"/> Quét & Kiểm tra thư mục Google Drive</h3>
+              </div>
+              <div style="padding: 18px;">
+                <p class="muted" style="margin-bottom: 14px;">Quét nhanh các file ảnh đã có sẵn trong thư mục Google Drive để kiểm tra hoặc nhập trực tiếp vào truyện tranh.</p>
+                <div class="form-group mb-3">
+                  <div class="input-with-action">
+                    <input type="text" [(ngModel)]="driveScanFolderUrl" placeholder="https://drive.google.com/drive/folders/1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9">
+                    <button type="button" class="btn-primary" (click)="scanDriveFolder()" [disabled]="isScanningDrive()">
+                      @if(isScanningDrive()){
+                        <span class="spinner-small"></span> <span>Đang quét...</span>
+                      }@else{
+                        <app-icon name="search"/> <span>Quét thư mục</span>
+                      }
+                    </button>
+                  </div>
+                </div>
+
+                @if(scannedDriveFiles().length > 0){
+                  <div class="scan-results-box mt-3">
+                    <div class="scan-results-header">
+                      <strong>Tìm thấy {{ scannedDriveFiles().length }} file ảnh</strong>
+                    </div>
+                    <div class="scanned-grid-preview" style="max-height: 220px;">
+                      @for(item of scannedDriveFiles(); track item.id; let idx = $index){
+                        <div class="scanned-thumb-card">
+                          <span class="page-idx">#{{ idx + 1 }}</span>
+                          <img [src]="item.directUrl" class="thumb-img" (error)="$any($event.target).src = '/cover-placeholder.svg'">
+                          <span class="thumb-filename" [title]="item.name">{{ item.name }}</span>
+                        </div>
+                      }
+                    </div>
+                  </div>
+                }
+              </div>
+            </div>
+
+            <div class="dash-box glass-card">
+              <div class="dash-box-header">
+                <h3 class="dash-box-title"><app-icon name="cloud"/> Quy trình hoạt động</h3>
+              </div>
+              <div style="padding: 18px;">
+                <ol class="drive-guide-list">
+                  <li>
+                    <strong>1. Tạo thông tin truyện tranh:</strong>
+                    Vào tab <em>Quản lý truyện</em>, bấm <em>Thêm truyện mới</em>. Bạn có thể bấm <strong>Upload ảnh bìa lên Drive</strong> hoặc dán link Google Drive bất kỳ.
+                  </li>
+                  <li>
+                    <strong>2. Tải các chương ảnh lên Google Drive:</strong>
+                    Vào <em>Quản lý chương</em>, chọn truyện và bấm <strong>Thêm chương mới</strong>. Bạn chỉ cần chọn ảnh từ máy và bấm <strong>Upload lên Google Drive</strong>. Hệ thống sẽ tự động tạo thư mục con trên Drive theo mẫu <code>[Tên truyện] - Chap [X]</code> và chia sẻ công khai.
+                  </li>
+                  <li>
+                    <strong>3. Độc giả xem truyện siêu tốc:</strong>
+                    Trình đọc web tự động lấy ảnh từ CDN Google tốc độ cao (<code>lh3.googleusercontent.com/d/ID</code>), đồng thời có proxy dự phòng nếu ảnh bị chặn xem.
+                  </li>
+                </ol>
+
+                <div class="mt-4 flex gap-3">
+                  <a [href]="driveStatus()?.folderUrl || 'https://drive.google.com/drive/folders/1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9'" target="_blank" rel="noopener" class="btn-primary">
+                    <app-icon name="link"/> <span>Mở Google Drive</span>
+                  </a>
+                  @if(!driveStatus()?.connected){
+                    <button type="button" class="btn-secondary" (click)="connectGoogleDrive()">
+                      <app-icon name="cloud"/> <span>Kết nối tài khoản Google</span>
+                    </button>
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       }
 
@@ -1233,6 +1430,44 @@
         </div>
 
         <form class="modal-body" (ngSubmit)="saveManga()">
+          <!-- Google Drive Integration Header in Manga Modal -->
+          <div class="manga-drive-box">
+            <div class="drive-box-header">
+              <div class="drive-box-title">
+                <app-icon name="cloud"/>
+                <span>Lưu trữ Google Drive</span>
+                <span class="badge-drive-status" [class.connected]="driveStatus()?.connected">
+                  <app-icon [name]="driveStatus()?.connected ? 'check' : 'alertCircle'"/>
+                  {{ driveStatus()?.connected ? 'Đã kết nối' : 'Chưa kết nối' }}
+                </span>
+              </div>
+              <div class="drive-box-actions">
+                @if(!driveStatus()?.connected){
+                  <button type="button" class="btn-xs-drive connect" (click)="connectGoogleDrive()">
+                    <app-icon name="cloud"/> <span>Kết nối Drive</span>
+                  </button>
+                }
+                <button type="button" class="btn-xs-drive config" (click)="driveConfigModalOpen.set(true)" title="Cài đặt Google Drive">
+                  <app-icon name="settings"/> <span>Cài đặt</span>
+                </button>
+              </div>
+            </div>
+            <div class="drive-box-details">
+              <div class="drive-box-folder">
+                <span class="lbl">Thư mục gốc:</span>
+                <code>{{ driveStatus()?.folderId || '1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9' }}</code>
+              </div>
+              <div class="drive-box-links">
+                <a [href]="driveStatus()?.folderUrl || 'https://drive.google.com/drive/folders/1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9'" target="_blank" rel="noopener" class="link-drive-ext">
+                  <app-icon name="link"/> <span>Mở trên Google Drive</span>
+                </a>
+                <button type="button" class="link-drive-scan" (click)="openDriveScanModal()">
+                  <app-icon name="folder"/> <span>Quét ảnh có sẵn</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div class="form-row-2">
             <div class="form-group">
               <label>Tên truyện <span class="req">*</span></label>
@@ -1288,13 +1523,31 @@
           </div>
 
           <div class="form-group">
-            <label>Ảnh bìa (Cover URL)</label>
+            <div class="label-with-action">
+              <label>Ảnh bìa (Cover URL)</label>
+              <div class="cover-drive-actions">
+                <label class="btn-file-upload btn-drive-upload-sm" [class.btn-uploading]="uploadingCoverToDrive()">
+                  <input type="file" accept="image/*" (change)="onDriveCoverUpload($event)" [disabled]="uploadingCoverToDrive()" style="display:none">
+                  <app-icon name="cloud"/>
+                  <span>{{ uploadingCoverToDrive() ? 'Đang tải lên Drive...' : 'Upload bìa lên Google Drive' }}</span>
+                </label>
+              </div>
+            </div>
             <div class="cover-input-preview-row">
-              <input type="text" [(ngModel)]="currentManga.cover" name="mangaCover" placeholder="https://... hoặc /uploads/...">
+              <input
+                type="text"
+                [(ngModel)]="currentManga.cover"
+                (ngModelChange)="onCoverUrlChange($event)"
+                name="mangaCover"
+                placeholder="Dán link Drive (drive.google.com/...) hoặc link ảnh trực tiếp..."
+              >
               @if(currentManga.cover){
                 <img [src]="currentManga.cover" class="modal-cover-preview" (error)="$any($event.target).src = '/cover-placeholder.svg'">
               }
             </div>
+            <small class="form-hint">
+              💡 Bấm nút <strong>Upload bìa lên Google Drive</strong> để tải ảnh trực tiếp, hoặc dán link Google Drive bất kỳ, hệ thống sẽ tự động chuyển đổi sang link xem được ngay!
+            </small>
           </div>
 
           <div class="form-group">
@@ -1331,6 +1584,15 @@
               <input type="checkbox" [(ngModel)]="currentManga.isHidden" name="mangaHidden">
               <span>Ẩn truyện khỏi trang chủ</span>
             </label>
+          </div>
+
+          <!-- Guide Hint Box in Manga Modal -->
+          <div class="manga-drive-hint-box">
+            <div class="hint-icon"><app-icon name="cloud"/></div>
+            <div class="hint-content">
+              <strong>Tải ảnh các chương lên Google Drive:</strong>
+              <p>Sau khi lưu thông tin truyện, bạn vào mục <strong>Quản lý chương</strong> để upload toàn bộ ảnh các tập truyện trực tiếp lên Google Drive. Hệ thống tự động tạo thư mục và sinh link đọc tốc độ cao cho độc giả.</p>
+            </div>
           </div>
 
           <div class="modal-footer">
@@ -1377,18 +1639,101 @@
             </div>
           </div>
 
-          <!-- COMIC MODE: Bulk Image URLs + Local Upload -->
+          <!-- COMIC MODE: Bulk Image URLs + Google Drive & Local Upload -->
           @if(currentChapter.contentType === 'comic'){
             <div class="content-editor-box">
               <div class="editor-header">
-                <label>Nội dung ảnh chương ({{currentChapter.pagesList?.length || 0}} ảnh)</label>
+                <div>
+                  <label class="editor-title-label">Nội dung ảnh chương ({{currentChapter.pagesList?.length || 0}} ảnh)</label>
+                  <span class="editor-sub-txt">Tải ảnh lên Google Drive, nhập link thư mục hoặc dán link ảnh trực tiếp</span>
+                </div>
                 <div class="upload-actions">
-                  <label class="btn-file-upload">
-                    <input type="file" multiple accept="image/*" (change)="onFileUpload($event)" style="display:none">
-                    <app-icon name="image"/> <span>Tải lên file ảnh từ máy</span>
+                  <!-- Button 1: Google Drive Upload -->
+                  <label class="btn-file-upload btn-drive-upload" [class.btn-uploading]="uploadingToDrive()">
+                    <input type="file" multiple accept="image/*" (change)="onDriveFileUpload($event)" [disabled]="uploadingToDrive()" style="display:none">
+                    <app-icon name="cloud"/> <span>Upload lên Google Drive</span>
                   </label>
+
+                  <!-- Button 2: Scan Drive Folder -->
+                  <button type="button" class="btn-action-drive" (click)="openDriveScanModal()">
+                    <app-icon name="folder"/> <span>Nhập từ thư mục Drive</span>
+                  </button>
+
+                  <!-- Button 3: Local Upload -->
+                  <label class="btn-file-upload btn-local-upload">
+                    <input type="file" multiple accept="image/*" (change)="onFileUpload($event)" [disabled]="uploadingImages()" style="display:none">
+                    <app-icon name="image"/> <span>Tải lên máy chủ</span>
+                  </label>
+
+                  <!-- Button 4: Drive Settings -->
+                  <button type="button" class="btn-icon-setting" (click)="driveConfigModalOpen.set(true)" title="Cài đặt Google Drive">
+                    <app-icon name="settings"/>
+                  </button>
                 </div>
               </div>
+
+              <!-- Google Drive Integration Status Bar -->
+              <div class="drive-status-strip" [class.connected]="driveStatus()?.connected">
+                <div class="drive-strip-info">
+                  <div class="drive-badge" [class.badge-ok]="driveStatus()?.connected" [class.badge-warn]="!driveStatus()?.connected">
+                    <app-icon [name]="driveStatus()?.connected ? 'check' : 'alertCircle'"/>
+                    <span>{{ driveStatus()?.connected ? 'Google Drive: Đã kết nối' : 'Google Drive: Chưa kết nối' }}</span>
+                  </div>
+                  @if(driveStatus()?.email){
+                    <span class="drive-email-tag">({{ driveStatus()?.email }})</span>
+                  }
+                  <span class="drive-folder-tag">
+                    Folder ID: <strong>{{ driveStatus()?.folderId || '1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9' }}</strong>
+                  </span>
+                  <a [href]="driveStatus()?.folderUrl || 'https://drive.google.com/drive/folders/1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9'" target="_blank" rel="noopener" class="drive-link-external">
+                    <app-icon name="link"/> <span>Mở trên Drive</span>
+                  </a>
+                </div>
+
+                <div class="drive-strip-actions">
+                  @if(!driveStatus()?.connected){
+                    <button type="button" class="btn-connect-drive-quick" (click)="connectGoogleDrive()">
+                      <app-icon name="cloud"/> <span>Kết nối ngay</span>
+                    </button>
+                  }@else{
+                    <button type="button" class="btn-text-dim" (click)="driveConfigModalOpen.set(true)">
+                      <span>Quản lý</span>
+                    </button>
+                  }
+                </div>
+              </div>
+
+              <!-- Drive Upload Progress Bar -->
+              @if(uploadingToDrive()){
+                <div class="drive-progress-card glass-panel">
+                  <div class="drive-progress-top">
+                    <div class="progress-info-lbl">
+                      <span class="spinner-small"></span>
+                      <span>{{ driveUploadProgress().currentFile }}</span>
+                    </div>
+                    <span class="progress-count-lbl">{{ driveUploadProgress().current }} / {{ driveUploadProgress().total }} ảnh</span>
+                  </div>
+                  <div class="progress-bar-track">
+                    <div class="progress-bar-fill drive-fill" [style.width.%]="driveUploadProgress().percent"></div>
+                  </div>
+                </div>
+              }
+
+              <!-- Local Upload Progress -->
+              @if(uploadingImages()){
+                <div class="drive-progress-card glass-panel">
+                  <div class="drive-progress-top">
+                    <div class="progress-info-lbl">
+                      <span class="spinner-small"></span>
+                      <span>{{ localUploadProgress().currentFile }}</span>
+                    </div>
+                    <span class="progress-count-lbl">{{ localUploadProgress().current }} / {{ localUploadProgress().total }} ảnh ({{ localUploadProgress().percent }}%)</span>
+                  </div>
+                  <div class="progress-bar-track">
+                    <div class="progress-bar-fill" [style.width.%]="localUploadProgress().percent"></div>
+                  </div>
+                </div>
+              }
 
               <div class="bulk-urls-input-wrap">
                 <textarea
@@ -1396,8 +1741,14 @@
                   name="chapPagesText"
                   rows="4"
                   (input)="onPagesTextInput()"
-                  placeholder="Dán hàng loạt link ảnh vào đây (mỗi dòng một URL ảnh)..."
+                  placeholder="Dán hàng loạt link ảnh hoặc link Google Drive vào đây (mỗi dòng một URL)... Hệ thống sẽ tự động chuyển link Google Drive thành ảnh đọc trực tiếp."
                 ></textarea>
+                <div class="textarea-hint-bar">
+                  <span>Hỗ trợ: Link ảnh trực tiếp, link Google Drive (view/open/uc/thumbnail). Đã tự động chuẩn hóa URL.</span>
+                  @if(currentChapter.pagesList?.length){
+                    <span class="pages-count-badge">{{ currentChapter.pagesList.length }} trang</span>
+                  }
+                </div>
               </div>
 
               <!-- Thumbnails preview & reorder -->
@@ -1407,7 +1758,7 @@
                     <div class="page-thumb-card">
                       <span class="page-idx">#{{idx + 1}}</span>
                       <img [src]="pageUrl" class="thumb-img" (error)="$any($event.target).src = '/cover-placeholder.svg'">
-                      <button type="button" class="btn-del-page" (click)="removeChapterPage(idx)"><app-icon name="trash"/></button>
+                      <button type="button" class="btn-del-page" (click)="removeChapterPage(idx)" title="Xóa trang"><app-icon name="trash"/></button>
                     </div>
                   }
                 </div>
@@ -1687,6 +2038,168 @@
               <app-icon name="download"/> <span>Bắt đầu tải ({{getSelectedDownloadCount()}} chương)</span>
             </button>
           }
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- Modal: Quét & Nhập từ Google Drive -->
+  @if(driveScanModalOpen()){
+    <div class="modal-backdrop" (click)="driveScanModalOpen.set(false)">
+      <div class="admin-modal glass-card" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <div>
+            <h3><app-icon name="folder"/> Nhập ảnh từ thư mục Google Drive</h3>
+            <span class="sub-manga-title">Quét toàn bộ ảnh trong thư mục và tự động sắp xếp theo thứ tự</span>
+          </div>
+          <button class="icon-btn-close" (click)="driveScanModalOpen.set(false)"><app-icon name="close"/></button>
+        </div>
+
+        <div class="modal-body">
+          <div class="form-group mb-3">
+            <label>Link hoặc ID thư mục Google Drive <span class="req">*</span></label>
+            <div class="input-with-action">
+              <input type="text" [(ngModel)]="driveScanFolderUrl" placeholder="https://drive.google.com/drive/folders/1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9">
+              <button type="button" class="btn-primary" (click)="scanDriveFolder()" [disabled]="isScanningDrive()">
+                @if(isScanningDrive()){
+                  <span class="spinner-small"></span> <span>Đang quét...</span>
+                }@else{
+                  <app-icon name="search"/> <span>Quét ảnh</span>
+                }
+              </button>
+            </div>
+            <small class="muted">Mặc định: Thư mục dùng chung <code>1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9</code> hoặc bất kỳ link thư mục nào bạn có quyền xem/sở hữu.</small>
+          </div>
+
+          <!-- Discovered files preview -->
+          @if(scannedDriveFiles().length > 0){
+            <div class="scan-results-box">
+              <div class="scan-results-header">
+                <strong>Tìm thấy {{ scannedDriveFiles().length }} file ảnh trong thư mục</strong>
+                <span class="scan-sort-tip">Đã tự động sắp xếp theo thứ tự tự nhiên (01.jpg, 02.jpg...)</span>
+              </div>
+              <div class="scanned-grid-preview">
+                @for(item of scannedDriveFiles(); track item.id; let idx = $index){
+                  <div class="scanned-thumb-card">
+                    <span class="page-idx">#{{ idx + 1 }}</span>
+                    <img [src]="item.directUrl" class="thumb-img" (error)="$any($event.target).src = '/cover-placeholder.svg'">
+                    <span class="thumb-filename" [title]="item.name">{{ item.name }}</span>
+                    @if(mangaModalOpen()){
+                      <button type="button" class="btn-pick-cover-action" (click)="selectScannedCover(item); driveScanModalOpen.set(false)">
+                        <app-icon name="check"/> <span>Chọn làm ảnh bìa</span>
+                      </button>
+                    }
+                  </div>
+                }
+              </div>
+            </div>
+          }
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" (click)="driveScanModalOpen.set(false)">Đóng</button>
+          @if(chapterModalOpen()){
+            <button type="button" class="btn-primary" (click)="importScannedDriveFiles()" [disabled]="scannedDriveFiles().length === 0">
+              <app-icon name="plus"/> <span>Chèn {{ scannedDriveFiles().length }} ảnh vào chương</span>
+            </button>
+          }@else{
+            <button type="button" class="btn-primary" (click)="driveScanModalOpen.set(false)">
+              <app-icon name="check"/> <span>Xong</span>
+            </button>
+          }
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- Modal: Cài đặt Google Drive -->
+  @if(driveConfigModalOpen()){
+    <div class="modal-backdrop" (click)="driveConfigModalOpen.set(false)">
+      <div class="admin-modal glass-card" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <div>
+            <h3><app-icon name="cloud"/> Cấu hình Google Drive</h3>
+            <span class="sub-manga-title">Quản lý kết nối và thư mục lưu trữ truyện trên Google Drive</span>
+          </div>
+          <button class="icon-btn-close" (click)="driveConfigModalOpen.set(false)"><app-icon name="close"/></button>
+        </div>
+
+        <div class="modal-body">
+          <!-- Connection Status Card -->
+          <div class="drive-account-card mb-4" [class.is-connected]="driveStatus()?.connected">
+            <div class="drive-account-icon">
+              <app-icon name="cloud"/>
+            </div>
+            <div class="drive-account-details">
+              <h4>{{ driveStatus()?.connected ? 'Đã kết nối tài khoản Google' : 'Chưa kết nối Google Drive' }}</h4>
+              <p class="muted">
+                {{ driveStatus()?.email ? driveStatus()?.email : 'Kết nối để cho phép TruyenDex tải ảnh truyện trực tiếp lên Google Drive.' }}
+              </p>
+              @if(driveStatus()?.quota){
+                <div class="drive-quota-bar">
+                  <span>Dung lượng đã dùng: {{ compact(driveStatus()?.quota?.usage || 0) }} / {{ driveStatus()?.quota?.limit ? compact(driveStatus()?.quota?.limit) : 'Không giới hạn' }}</span>
+                </div>
+              }
+            </div>
+            <div class="drive-account-action">
+              @if(driveStatus()?.connected){
+                <button type="button" class="btn-danger btn-sm" (click)="disconnectGoogleDrive()">Ngắt kết nối</button>
+              }@else{
+                <button type="button" class="btn-primary" (click)="connectGoogleDrive()">
+                  <app-icon name="cloud"/> <span>Kết nối Google</span>
+                </button>
+              }
+            </div>
+          </div>
+
+          <!-- OAuth Redirect URI Help Box -->
+          <div class="oauth-help-box mb-4">
+            <div class="oauth-help-title">
+              <app-icon name="info"/>
+              <span>Nếu gặp lỗi <strong>redirect_uri_mismatch (Lỗi 400)</strong> khi bấm Kết nối:</span>
+            </div>
+            <p class="oauth-help-desc">
+              Thêm URI sau vào mục <strong>Authorized redirect URIs</strong> của OAuth Client ID trên <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener" class="text-link">Google Cloud Console</a>:
+            </p>
+            <div class="oauth-uri-bar">
+              <code>{{ driveRedirectUri }}</code>
+              <button type="button" class="btn-copy-uri" (click)="copyDriveRedirectUri()" title="Sao chép URI">
+                <app-icon name="copy"/> <span>Sao chép</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Target Folder ID -->
+          <div class="form-group mb-3">
+            <label>ID hoặc Link thư mục đích (Folder ID) <span class="req">*</span></label>
+            <input type="text" [(ngModel)]="driveConfigFolderId" placeholder="1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9">
+            <small class="muted">
+              Mặc định: <code>1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9</code>.
+              <a [href]="driveStatus()?.folderUrl || 'https://drive.google.com/drive/folders/1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9'" target="_blank" rel="noopener" class="text-link">
+                Mở thư mục này trên Drive →
+              </a>
+            </small>
+          </div>
+
+          <!-- Advanced: Manual Refresh Token or API Key -->
+          <div class="advanced-settings-box">
+            <h5 class="adv-title"><app-icon name="settings"/> Thiết lập nâng cao (Tùy chọn)</h5>
+            <div class="form-group mb-2">
+              <label>Refresh Token thủ công (Nếu không dùng nút đăng nhập OAuth)</label>
+              <input type="password" [(ngModel)]="driveConfigManualToken" placeholder="Nhập Refresh Token nếu có...">
+            </div>
+            <div class="form-group">
+              <label>Google API Key (Dùng để quét thư mục công khai không cần đăng nhập)</label>
+              <input type="text" [(ngModel)]="driveConfigApiKey" placeholder="AIzaSy...">
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" (click)="driveConfigModalOpen.set(false)">Đóng</button>
+          <button type="button" class="btn-primary" (click)="saveDriveConfig()" [disabled]="isSavingDriveConfig()">
+            <span>Lưu cấu hình</span>
+          </button>
         </div>
       </div>
     </div>

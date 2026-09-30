@@ -64,7 +64,7 @@ export function cleanDescription(desc: string | null | undefined): string {
 }
 
 export function proxyImage(url: string): string {
-  if (!url || url.startsWith('https://services.f-ck.me/') || url.startsWith('/api/')) return url;
+  if (!url || url.startsWith('https://services.f-ck.me/') || url.startsWith('/api/') || url.startsWith('/uploads/')) return url;
   if (url.includes('.mangadex.network/') || url.includes('mangadex.org/')) {
     return 'https://services.f-ck.me/v1/image/' + btoa(url).replace(/\+/g, '-').replace(/\//g, '_');
   }

@@ -555,7 +555,16 @@ export class Reader implements OnInit, OnDestroy {
   }
 
   pageUrl(url: string, i: number): string {
-    return this.fallbackUrls().get(i) ?? url;
+    const raw = this.fallbackUrls().get(i) ?? url;
+    if (!raw) return '';
+    if (raw.startsWith('/uploads/')) {
+      return '/api' + raw;
+    }
+    const match = raw.match(/(?:drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)|lh3\.googleusercontent\.com\/d\/)([a-zA-Z0-9_-]{25,})/);
+    if (match) {
+      return `https://lh3.googleusercontent.com/d/${match[1]}`;
+    }
+    return raw;
   }
 
   onLoaded(i: number): void {
@@ -632,8 +641,15 @@ export class Reader implements OnInit, OnDestroy {
   imageError(i: number): void {
     const list = this.pages();
     const current = this.pageUrl(list[i], i);
-    if (!current.startsWith('/api/catalog/image-proxy')) {
-      const fallback = '/api/catalog/image-proxy?url=' + encodeURIComponent(current);
+    if (current.startsWith('/api/uploads/') || current.startsWith('/uploads/')) {
+      this.failed.update(s => new Set(s).add(i));
+      return;
+    }
+    if (!current.startsWith('/api/catalog/image-proxy') && !current.startsWith('/api/drive/image/')) {
+      const driveMatch = current.match(/(?:drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=)|lh3\.googleusercontent\.com\/d\/)([a-zA-Z0-9_-]{25,})/);
+      const fallback = driveMatch
+        ? `/api/drive/image/${driveMatch[1]}`
+        : '/api/catalog/image-proxy?url=' + encodeURIComponent(current);
       this.fallbackUrls.update(m => new Map(m).set(i, fallback));
       return;
     }

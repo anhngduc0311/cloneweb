@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text.RegularExpressions;
 
 namespace TruyenDex.Api;
 
@@ -41,6 +42,43 @@ public static class AdminEndpoints
             db.Reports.Add(report);
             await db.SaveChangesAsync();
             return Results.Ok(new { message = "Báo cáo của bạn đã được gửi tới ban quản trị. Cảm ơn bạn!" });
+        });
+
+        // Public OAuth callback for Google Drive redirect flow
+        app.MapGet("/api/admin/drive/oauth-callback", async (string? code, string? error, string? state, HttpContext ctx, GoogleDriveService drive) =>
+        {
+            if (!string.IsNullOrEmpty(error) || string.IsNullOrEmpty(code))
+            {
+                return Results.Redirect("/admin?drive_error=" + Uri.EscapeDataString(error ?? "Xác thực Google Drive thất bại"));
+            }
+
+            var redirectUri = !string.IsNullOrWhiteSpace(state) && state.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+                ? state.Trim()
+                : null;
+
+            if (string.IsNullOrWhiteSpace(redirectUri))
+            {
+                var scheme = ctx.Request.Scheme;
+                var host = ctx.Request.Host.Value;
+                if (ctx.Request.Headers.TryGetValue("X-Forwarded-Proto", out var proto)) scheme = proto.ToString();
+                if (ctx.Request.Headers.TryGetValue("X-Forwarded-Host", out var fHost)) host = fHost.ToString();
+                redirectUri = $"{scheme}://{host}/api/admin/drive/oauth-callback";
+            }
+
+            try
+            {
+                var ok = await drive.ExchangeCodeAsync(code, redirectUri);
+                if (ok)
+                {
+                    return Results.Redirect("/admin?drive_connected=1");
+                }
+            }
+            catch (Exception ex)
+            {
+                return Results.Redirect("/admin?drive_error=" + Uri.EscapeDataString(ex.Message));
+            }
+
+            return Results.Redirect("/admin?drive_error=" + Uri.EscapeDataString("Không thể liên kết Google Drive"));
         });
 
         // -------------------------------------------------------------
@@ -650,8 +688,12 @@ public static class AdminEndpoints
             var uploadDir = Path.Combine(webRoot, "uploads", "chapters", DateTime.UtcNow.ToString("yyyyMMdd"));
             Directory.CreateDirectory(uploadDir);
 
+            var orderedFiles = files
+                .OrderBy(f => System.Text.RegularExpressions.Regex.Replace(f.FileName, @"\d+", m => m.Value.PadLeft(10, '0')))
+                .ToList();
+
             var uploadedUrls = new List<string>();
-            foreach (var file in files)
+            foreach (var file in orderedFiles)
             {
                 if (file.Length == 0) continue;
                 var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
@@ -664,12 +706,135 @@ public static class AdminEndpoints
                     await file.CopyToAsync(stream);
                 }
 
-                var relUrl = $"/uploads/chapters/{DateTime.UtcNow:yyyyMMdd}/{fileName}";
+                var relUrl = $"/api/uploads/chapters/{DateTime.UtcNow:yyyyMMdd}/{fileName}";
                 uploadedUrls.Add(relUrl);
             }
 
             return Results.Ok(new { urls = uploadedUrls });
         }).DisableAntiforgery();
+
+        // 3.1 GOOGLE DRIVE INTEGRATION ENDPOINTS
+        admin.MapGet("/drive/status", async (GoogleDriveService drive) =>
+        {
+            var status = await drive.GetStatusAsync();
+            return Results.Ok(status);
+        });
+
+        admin.MapGet("/drive/auth-url", (string? redirectUri, GoogleDriveService drive, HttpContext ctx) =>
+        {
+            var rUri = redirectUri;
+            if (string.IsNullOrWhiteSpace(rUri))
+            {
+                var scheme = ctx.Request.Scheme;
+                var host = ctx.Request.Host.Value;
+                if (ctx.Request.Headers.TryGetValue("X-Forwarded-Proto", out var proto)) scheme = proto.ToString();
+                if (ctx.Request.Headers.TryGetValue("X-Forwarded-Host", out var fHost)) host = fHost.ToString();
+                rUri = $"{scheme}://{host}/api/admin/drive/oauth-callback";
+            }
+            var url = drive.GetAuthUrl(rUri, rUri);
+            return Results.Ok(new { url });
+        });
+
+        admin.MapPost("/drive/oauth-callback", async (DriveCallbackRequest req, GoogleDriveService drive) =>
+        {
+            if (string.IsNullOrWhiteSpace(req.Code))
+                return Results.BadRequest(new { message = "Mã xác thực không hợp lệ." });
+            try
+            {
+                var ok = await drive.ExchangeCodeAsync(req.Code, req.RedirectUri);
+                if (!ok) return Results.BadRequest(new { message = "Không thể xác thực mã từ Google." });
+                return Results.Ok(await drive.GetStatusAsync());
+            }
+            catch (Exception ex)
+            {
+                return Results.BadRequest(new { message = ex.Message });
+            }
+        });
+
+        admin.MapPost("/drive/config", async (DriveConfigRequest req, GoogleDriveService drive) =>
+        {
+            await drive.SaveConfigAsync(req.FolderId, req.RefreshToken, req.ApiKey);
+            return Results.Ok(await drive.GetStatusAsync());
+        });
+
+        admin.MapPost("/drive/disconnect", async (GoogleDriveService drive) =>
+        {
+            await drive.DisconnectAsync();
+            return Results.Ok(new { message = "Đã ngắt kết nối Google Drive thành công." });
+        });
+
+        admin.MapPost("/drive/upload-images", async (IFormFileCollection files, string? folderId, string? mangaTitle, decimal? chapterNumber, GoogleDriveService drive) =>
+        {
+            if (files.Count == 0) return Results.BadRequest(new { message = "Không có file ảnh nào được gửi." });
+
+            if (!await drive.IsConfiguredAsync())
+            {
+                return Results.BadRequest(new { message = "Google Drive chưa được liên kết. Vui lòng kết nối Google Drive trước khi tải ảnh." });
+            }
+
+            var targetFolderId = !string.IsNullOrWhiteSpace(folderId) ? GoogleDriveService.ExtractFolderId(folderId) : drive.FolderId;
+
+            // Create a subfolder for this manga chapter if title and number are given
+            if (!string.IsNullOrWhiteSpace(mangaTitle) && chapterNumber.HasValue)
+            {
+                try
+                {
+                    var subfolderName = $"{mangaTitle.Trim()} - Chap {chapterNumber}";
+                    var subId = await drive.CreateFolderAsync(subfolderName, targetFolderId);
+                    if (!string.IsNullOrEmpty(subId))
+                    {
+                        targetFolderId = subId;
+                    }
+                }
+                catch { }
+            }
+
+            // Natural sort files by filename so pages are in correct sequence
+            var orderedFiles = files
+                .OrderBy(f => Regex.Replace(f.FileName, @"\d+", m => m.Value.PadLeft(10, '0')))
+                .ToList();
+
+            var urls = new List<string>();
+            var fileList = new List<object>();
+
+            foreach (var file in orderedFiles)
+            {
+                if (file.Length == 0) continue;
+                using var stream = file.OpenReadStream();
+                var ct = file.ContentType;
+                if (string.IsNullOrEmpty(ct) || ct == "application/octet-stream")
+                {
+                    ct = Path.GetExtension(file.FileName).ToLowerInvariant() switch
+                    {
+                        ".png" => "image/png",
+                        ".webp" => "image/webp",
+                        ".gif" => "image/gif",
+                        ".avif" => "image/avif",
+                        _ => "image/jpeg"
+                    };
+                }
+
+                var res = await drive.UploadImageAsync(stream, file.FileName, ct, targetFolderId);
+                urls.Add(res.DirectUrl);
+                fileList.Add(new { id = res.Id, name = file.FileName, directUrl = res.DirectUrl, proxyUrl = res.ProxyUrl, thumbnailUrl = res.ThumbnailUrl });
+            }
+
+            return Results.Ok(new { urls, items = fileList, folderId = targetFolderId });
+        }).DisableAntiforgery();
+
+        admin.MapPost("/drive/scan-folder", async (DriveScanRequest req, GoogleDriveService drive) =>
+        {
+            var folderTarget = string.IsNullOrWhiteSpace(req.FolderUrlOrId) ? drive.FolderId : req.FolderUrlOrId.Trim();
+            try
+            {
+                var result = await drive.ScanFolderAsync(folderTarget);
+                return Results.Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return Results.BadRequest(new { message = ex.Message });
+            }
+        });
 
         // 4. TAXONOMY MANAGEMENT
         admin.MapGet("/taxonomy", async (string? type, AppDb db) =>

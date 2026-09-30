@@ -1981,3 +1981,910 @@
   }
 }
 
+/* =========================================================================
+   GOOGLE DRIVE INTEGRATION STYLES
+   ========================================================================= */
+
+.editor-title-label {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #f1f5f9;
+  display: block;
+}
+
+.editor-sub-txt {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  display: block;
+  margin-top: 2px;
+}
+
+.btn-drive-upload {
+  background: linear-gradient(135deg, #059669, #0284c7) !important;
+  color: #fff !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.25) !important;
+  font-weight: 600 !important;
+
+  &:hover:not(.disabled) {
+    background: linear-gradient(135deg, #047857, #0369a1) !important;
+    box-shadow: 0 6px 18px rgba(5, 150, 105, 0.35) !important;
+    transform: translateY(-1px);
+  }
+
+  &.btn-uploading {
+    opacity: 0.7;
+    pointer-events: none;
+  }
+}
+
+.btn-action-drive {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #38bdf8;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(56, 189, 248, 0.15);
+    border-color: rgba(56, 189, 248, 0.35);
+    color: #fff;
+    transform: translateY(-1px);
+  }
+}
+
+.btn-local-upload {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #cbd5e1 !important;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+    color: #fff !important;
+  }
+}
+
+.btn-icon-setting {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+  }
+}
+
+.drive-status-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-top: 10px;
+  margin-bottom: 12px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+
+  &.connected {
+    border-color: rgba(16, 185, 129, 0.25);
+    background: rgba(6, 78, 59, 0.15);
+  }
+
+  .drive-strip-info {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    font-size: 0.82rem;
+
+    .drive-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+
+      &.badge-ok {
+        background: rgba(16, 185, 129, 0.15);
+        color: #34d399;
+        border: 1px solid rgba(16, 185, 129, 0.3);
+      }
+
+      &.badge-warn {
+        background: rgba(234, 179, 8, 0.15);
+        color: #fbbf24;
+        border: 1px solid rgba(234, 179, 8, 0.3);
+      }
+    }
+
+    .drive-email-tag {
+      color: #cbd5e1;
+      font-weight: 500;
+    }
+
+    .drive-folder-tag {
+      color: #94a3b8;
+      strong {
+        color: #38bdf8;
+        font-family: monospace;
+      }
+    }
+
+    .drive-link-external {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: #38bdf8;
+      text-decoration: none;
+      font-size: 0.78rem;
+
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+  }
+
+  .drive-strip-actions {
+    .btn-connect-drive-quick {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: #0284c7;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      transition: background 0.2s ease;
+
+      &:hover {
+        background: #0369a1;
+      }
+    }
+
+    .btn-text-dim {
+      background: none;
+      border: none;
+      color: #94a3b8;
+      font-size: 0.8rem;
+      cursor: pointer;
+
+      &:hover {
+        color: #fff;
+        text-decoration: underline;
+      }
+    }
+  }
+}
+
+.drive-progress-card {
+  padding: 12px 14px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+
+  .drive-progress-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 0.85rem;
+
+    .progress-info-lbl {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #38bdf8;
+      font-weight: 600;
+    }
+
+    .progress-count-lbl {
+      color: #94a3b8;
+      font-weight: 700;
+    }
+  }
+
+  .drive-fill {
+    background: linear-gradient(90deg, #10b981, #06b6d4) !important;
+  }
+}
+
+.textarea-hint-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: #64748b;
+
+  .pages-count-badge {
+    background: rgba(56, 189, 248, 0.15);
+    color: #38bdf8;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 700;
+  }
+}
+
+.scan-results-box {
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+
+  .scan-results-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    font-size: 0.85rem;
+    color: #f1f5f9;
+
+    .scan-sort-tip {
+      font-size: 0.75rem;
+      color: #34d399;
+    }
+  }
+
+  .scanned-grid-preview {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: 10px;
+    max-height: 280px;
+    overflow-y: auto;
+    padding-right: 4px;
+
+    .scanned-thumb-card {
+      position: relative;
+      border-radius: 6px;
+      overflow: hidden;
+      background: #0f172a;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      flex-direction: column;
+
+      .page-idx {
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        font-size: 0.65rem;
+        font-weight: 700;
+        background: rgba(0, 0, 0, 0.75);
+        color: #fff;
+        padding: 1px 4px;
+        border-radius: 3px;
+        z-index: 2;
+      }
+
+      .thumb-img {
+        width: 100%;
+        height: 100px;
+        object-fit: cover;
+      }
+
+      .thumb-filename {
+        font-size: 0.65rem;
+        padding: 3px 5px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: #94a3b8;
+        background: rgba(0, 0, 0, 0.5);
+      }
+    }
+  }
+}
+
+.drive-account-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+
+  &.is-connected {
+    border-color: rgba(16, 185, 129, 0.35);
+    background: rgba(6, 78, 59, 0.2);
+
+    .drive-account-icon {
+      background: rgba(16, 185, 129, 0.2);
+      color: #34d399;
+    }
+  }
+
+  .drive-account-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+
+    app-icon {
+      width: 26px;
+      height: 26px;
+    }
+  }
+
+  .drive-account-details {
+    flex: 1;
+
+    h4 {
+      margin: 0 0 3px 0;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    p {
+      margin: 0;
+      font-size: 0.8rem;
+    }
+
+    .drive-quota-bar {
+      margin-top: 6px;
+      font-size: 0.75rem;
+      color: #38bdf8;
+    }
+  }
+
+  .drive-account-action {
+    flex-shrink: 0;
+  }
+}
+
+.oauth-help-box {
+  padding: 14px;
+  border-radius: 8px;
+  background: rgba(234, 179, 8, 0.08);
+  border: 1px solid rgba(234, 179, 8, 0.25);
+
+  .oauth-help-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #facc15;
+    margin-bottom: 6px;
+
+    app-icon {
+      width: 16px;
+      height: 16px;
+      color: #facc15;
+    }
+  }
+
+  .oauth-help-desc {
+    margin: 0 0 10px 0;
+    font-size: 0.8rem;
+    color: #cbd5e1;
+    line-height: 1.4;
+
+    .text-link {
+      color: #38bdf8;
+      text-decoration: underline;
+    }
+  }
+
+  .oauth-uri-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+
+    code {
+      flex: 1;
+      font-size: 0.78rem;
+      color: #38bdf8;
+      word-break: break-all;
+      user-select: all;
+    }
+
+    .btn-copy-uri {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #fff;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 5px;
+      cursor: pointer;
+      transition: all 0.2s;
+
+      &:hover {
+        background: rgba(56, 189, 248, 0.2);
+        border-color: #38bdf8;
+        color: #38bdf8;
+      }
+
+      app-icon {
+        width: 14px;
+        height: 14px;
+      }
+    }
+  }
+}
+
+.advanced-settings-box {
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+
+  .adv-title {
+    margin: 0 0 10px 0;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #cbd5e1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+}
+
+/* MANGA LIST DRIVE BANNER */
+.manga-list-drive-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+
+  &.connected {
+    border-color: rgba(16, 185, 129, 0.3);
+    background: linear-gradient(90deg, rgba(6, 78, 59, 0.2) 0%, rgba(15, 23, 42, 0.6) 100%);
+  }
+
+  .drive-banner-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+
+    .drive-icon-badge {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      app-icon {
+        width: 22px;
+        height: 22px;
+      }
+    }
+
+    .drive-banner-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+
+      strong {
+        font-size: 0.95rem;
+        color: #fff;
+      }
+
+      .status-indicator {
+        font-size: 0.75rem;
+        padding: 2px 8px;
+        border-radius: 100px;
+        background: rgba(239, 68, 68, 0.2);
+        color: #f87171;
+        font-weight: 600;
+
+        &.online {
+          background: rgba(16, 185, 129, 0.2);
+          color: #34d399;
+        }
+      }
+    }
+
+    .drive-banner-desc {
+      font-size: 0.8rem;
+      color: #94a3b8;
+      margin-top: 3px;
+
+      code {
+        background: rgba(0, 0, 0, 0.4);
+        padding: 1px 6px;
+        border-radius: 4px;
+        color: #38bdf8;
+        font-family: monospace;
+      }
+    }
+  }
+
+  .drive-banner-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    .btn-banner-link,
+    .btn-banner-scan,
+    .btn-banner-config,
+    .btn-banner-connect {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-banner-link {
+      background: rgba(255, 255, 255, 0.06);
+      color: #e2e8f0;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.12);
+        color: #fff;
+      }
+    }
+
+    .btn-banner-scan {
+      background: rgba(56, 189, 248, 0.12);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+
+      &:hover {
+        background: rgba(56, 189, 248, 0.25);
+      }
+    }
+
+    .btn-banner-connect {
+      background: #0284c7;
+      color: #fff;
+      border: none;
+
+      &:hover {
+        background: #0369a1;
+      }
+    }
+
+    .btn-banner-config {
+      background: rgba(255, 255, 255, 0.06);
+      color: #94a3b8;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+
+      &:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.1);
+      }
+    }
+  }
+}
+
+/* MANGA MODAL DRIVE BOX */
+.manga-drive-box {
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.8) 100%);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+
+  .drive-box-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+
+    .drive-box-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 0.92rem;
+      color: #fff;
+
+      app-icon {
+        color: #38bdf8;
+        width: 18px;
+        height: 18px;
+      }
+
+      .badge-drive-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 0.72rem;
+        padding: 2px 8px;
+        border-radius: 100px;
+        background: rgba(239, 68, 68, 0.2);
+        color: #f87171;
+        font-weight: 600;
+
+        &.connected {
+          background: rgba(16, 185, 129, 0.2);
+          color: #34d399;
+        }
+
+        app-icon {
+          width: 12px;
+          height: 12px;
+        }
+      }
+    }
+
+    .drive-box-actions {
+      display: flex;
+      gap: 8px;
+
+      .btn-xs-drive {
+        padding: 4px 10px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        border-radius: 6px;
+        border: none;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+
+        &.connect {
+          background: #0284c7;
+          color: #fff;
+          &:hover { background: #0369a1; }
+        }
+
+        &.config {
+          background: rgba(255, 255, 255, 0.08);
+          color: #cbd5e1;
+          &:hover { background: rgba(255, 255, 255, 0.16); color: #fff; }
+        }
+      }
+    }
+  }
+
+  .drive-box-details {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 0.8rem;
+    color: #94a3b8;
+
+    .drive-box-folder {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+
+      code {
+        background: rgba(0, 0, 0, 0.35);
+        color: #38bdf8;
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-family: monospace;
+      }
+    }
+
+    .drive-box-links {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+
+      .link-drive-ext, .link-drive-scan {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 0.78rem;
+        color: #38bdf8;
+        background: none;
+        border: none;
+        cursor: pointer;
+        text-decoration: none;
+
+        &:hover {
+          color: #7dd3fc;
+          text-decoration: underline;
+        }
+
+        app-icon {
+          width: 14px;
+          height: 14px;
+        }
+      }
+    }
+  }
+}
+
+/* COVER DRIVE ACTIONS */
+.label-with-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+
+  label {
+    margin-bottom: 0;
+  }
+
+  .cover-drive-actions {
+    .btn-drive-upload-sm {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      border-radius: 6px;
+      background: linear-gradient(135deg, rgba(2, 132, 199, 0.3) 0%, rgba(14, 165, 233, 0.3) 100%);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      color: #38bdf8;
+      cursor: pointer;
+      transition: all 0.2s;
+
+      &:hover {
+        background: rgba(2, 132, 199, 0.5);
+        color: #fff;
+        border-color: #38bdf8;
+      }
+
+      &.btn-uploading {
+        opacity: 0.7;
+        pointer-events: none;
+      }
+
+      app-icon {
+        width: 14px;
+        height: 14px;
+      }
+    }
+  }
+}
+
+/* MANGA DRIVE HINT BOX */
+.manga-drive-hint-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px dashed rgba(56, 189, 248, 0.25);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+
+  .hint-icon {
+    color: #38bdf8;
+    margin-top: 2px;
+    flex-shrink: 0;
+
+    app-icon {
+      width: 18px;
+      height: 18px;
+    }
+  }
+
+  .hint-content {
+    font-size: 0.8rem;
+    color: #cbd5e1;
+    line-height: 1.45;
+
+    strong {
+      color: #38bdf8;
+      display: block;
+      margin-bottom: 2px;
+    }
+
+    p {
+      margin: 0;
+    }
+  }
+}
+
+/* PICK COVER BUTTON IN SCANNED DRIVE MODAL */
+.btn-pick-cover-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  padding: 4px 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: #0284c7;
+  color: #fff;
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+  transition: background 0.2s;
+
+  &:hover {
+    background: #0369a1;
+  }
+
+  app-icon {
+    width: 12px;
+    height: 12px;
+  }
+}
+
+/* HIGHLIGHT DRIVE BUTTON IN MANGA TABLE */
+.icon-btn-action.highlight-drive {
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.3);
+  background: rgba(56, 189, 248, 0.1);
+
+  &:hover {
+    background: rgba(56, 189, 248, 0.25);
+    color: #fff;
+  }
+}
+
+/* DRIVE GUIDE LIST */
+.drive-guide-list {
+  padding-left: 20px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 0.85rem;
+  color: #cbd5e1;
+  line-height: 1.5;
+
+  li {
+    strong {
+      color: #fff;
+    }
+    code {
+      background: rgba(0, 0, 0, 0.4);
+      color: #38bdf8;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 0.82rem;
+    }
+    em {
+      color: #38bdf8;
+      font-style: normal;
+      font-weight: 600;
+    }
+  }
+}
+
