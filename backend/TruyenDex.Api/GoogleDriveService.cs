@@ -61,7 +61,22 @@ public class GoogleDriveService
         _driveConfig = LoadConfig();
     }
 
-    public string FolderId => !string.IsNullOrWhiteSpace(_driveConfig.FolderId) ? _driveConfig.FolderId : DefaultFolderId;
+    public string FolderId
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(_driveConfig.FolderId) && _driveConfig.FolderId != DefaultFolderId && _driveConfig.FolderId != "root")
+            {
+                return _driveConfig.FolderId;
+            }
+            var envFolder = _config["Google:DriveFolderId"] ?? Environment.GetEnvironmentVariable("GOOGLE_DRIVE_FOLDER_ID");
+            if (!string.IsNullOrWhiteSpace(envFolder) && envFolder != DefaultFolderId && envFolder != "root")
+            {
+                return envFolder;
+            }
+            return "";
+        }
+    }
     public string ClientId => _config["Google:ClientId"] ?? Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID") ?? "";
     public string ClientSecret => _config["Google:ClientSecret"] ?? Environment.GetEnvironmentVariable("GOOGLE_CLIENT_SECRET") ?? "";
 
@@ -154,7 +169,7 @@ public class GoogleDriveService
 
     public string GetAuthUrl(string redirectUri, string? state = null)
     {
-        const string scopes = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly openid email profile";
+        const string scopes = "https://www.googleapis.com/auth/drive openid email profile";
         var url = $"https://accounts.google.com/o/oauth2/v2/auth?client_id={Uri.EscapeDataString(ClientId)}&redirect_uri={Uri.EscapeDataString(redirectUri)}&response_type=code&scope={Uri.EscapeDataString(scopes)}&access_type=offline&prompt=consent";
         if (!string.IsNullOrWhiteSpace(state))
         {
@@ -307,11 +322,28 @@ public class GoogleDriveService
             catch { }
         }
 
+        if (isConnected && string.IsNullOrWhiteSpace(FolderId))
+        {
+            try
+            {
+                var appFolderId = await GetOrCreateAppFolderAsync("akatruyen");
+                if (!string.IsNullOrEmpty(appFolderId))
+                {
+                    _driveConfig.FolderId = appFolderId;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[GoogleDrive] Cannot auto-init akatruyen folder: {ex.Message}");
+            }
+        }
+
+        var activeFolderId = FolderId;
         return new
         {
             connected = isConnected,
-            folderId = FolderId,
-            folderUrl = $"https://drive.google.com/drive/folders/{FolderId}",
+            folderId = activeFolderId,
+            folderUrl = !string.IsNullOrEmpty(activeFolderId) ? $"https://drive.google.com/drive/folders/{activeFolderId}" : "https://drive.google.com/drive/my-drive",
             email = _driveConfig.ConnectedEmail,
             name = _driveConfig.ConnectedName,
             connectedAt = _driveConfig.ConnectedAt,
@@ -321,17 +353,199 @@ public class GoogleDriveService
         };
     }
 
+    public async Task<string> GetOrCreateAppFolderAsync(string folderName = "akatruyen")
+    {
+        var token = await GetAccessTokenAsync() ?? throw new InvalidOperationException("Chưa kết nối Google Drive.");
+
+        // If explicitly configured with another folder (not empty/root/default), use that
+        if (!string.IsNullOrWhiteSpace(_driveConfig.FolderId) &&
+            _driveConfig.FolderId != DefaultFolderId &&
+            _driveConfig.FolderId != "root")
+        {
+            return _driveConfig.FolderId;
+        }
+
+        // 1. Search for 'akatruyen' in root
+        var foundId = await SearchFolderInParentAsync(folderName, "root", token);
+        if (string.IsNullOrEmpty(foundId))
+        {
+            // Search anywhere in user's Drive
+            try
+            {
+                var safeName = folderName.Replace("'", "\\'");
+                var query = $"name = '{safeName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
+                using var searchReq = new HttpRequestMessage(HttpMethod.Get, $"https://www.googleapis.com/drive/v3/files?q={Uri.EscapeDataString(query)}&fields=files(id,name)&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true");
+                searchReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                var searchRes = await _http.SendAsync(searchReq);
+                if (searchRes.IsSuccessStatusCode)
+                {
+                    var searchJson = await searchRes.Content.ReadFromJsonAsync<JsonNode>();
+                    var existingFiles = searchJson?["files"]?.AsArray();
+                    if (existingFiles != null && existingFiles.Count > 0)
+                    {
+                        foundId = existingFiles[0]?["id"]?.ToString();
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // 2. Create if not found
+        if (string.IsNullOrEmpty(foundId))
+        {
+            foundId = await CreateFolderInternalAsync(folderName, "root", token, allowFallback: false);
+        }
+
+        // 3. Save as active FolderId and auto-relocate any root manga folders into akatruyen
+        if (!string.IsNullOrEmpty(foundId))
+        {
+            _driveConfig.FolderId = foundId;
+            var targetAppFolder = foundId;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await SaveConfigAsync(targetAppFolder, _driveConfig.RefreshToken, _driveConfig.ApiKey, _driveConfig.ConnectedEmail, _driveConfig.ConnectedName);
+                    await MoveRootMangaFoldersToAppFolderAsync(targetAppFolder, token);
+                }
+                catch { }
+            });
+        }
+
+        return foundId;
+    }
+
+    public async Task<string> FindOrCreateFolderAsync(string folderName, string? parentFolderId = null)
+    {
+        var token = await GetAccessTokenAsync() ?? throw new InvalidOperationException("Chưa kết nối Google Drive.");
+        var parent = !string.IsNullOrWhiteSpace(parentFolderId) ? parentFolderId : FolderId;
+        if (string.IsNullOrWhiteSpace(parent) || parent == "root" || parent == DefaultFolderId)
+        {
+            parent = await GetOrCreateAppFolderAsync("akatruyen");
+        }
+
+        var p = !string.IsNullOrWhiteSpace(parent) && parent != "root" ? parent : "root";
+
+        // 1. Search in target parent folder (e.g. inside akatruyen)
+        var foundId = await SearchFolderInParentAsync(folderName, p, token);
+        if (!string.IsNullOrEmpty(foundId)) return foundId;
+
+        // 2. If parent != "root", check if folder exists in "root" (e.g. previously created in root)
+        if (p != "root")
+        {
+            var rootFoundId = await SearchFolderInParentAsync(folderName, "root", token);
+            if (!string.IsNullOrEmpty(rootFoundId))
+            {
+                // Auto-move it from root into parent (akatruyen)!
+                await MoveFileOrFolderAsync(rootFoundId, p, "root", token);
+                return rootFoundId;
+            }
+        }
+
+        return await CreateFolderAsync(folderName, parent);
+    }
+
+    public async Task<bool> MoveFileOrFolderAsync(string fileId, string newParentId, string oldParentId, string? token = null)
+    {
+        token ??= await GetAccessTokenAsync();
+        if (string.IsNullOrEmpty(token)) return false;
+
+        try
+        {
+            var removeParam = !string.IsNullOrWhiteSpace(oldParentId) ? $"&removeParents={Uri.EscapeDataString(oldParentId)}" : "";
+            using var req = new HttpRequestMessage(HttpMethod.Patch,
+                $"https://www.googleapis.com/drive/v3/files/{fileId}?addParents={Uri.EscapeDataString(newParentId)}{removeParam}&supportsAllDrives=true");
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            req.Content = new StringContent("{}", Encoding.UTF8, "application/json");
+            var res = await _http.SendAsync(req);
+            return res.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task MoveRootMangaFoldersToAppFolderAsync(string appFolderId, string token)
+    {
+        try
+        {
+            var query = "'root' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"https://www.googleapis.com/drive/v3/files?q={Uri.EscapeDataString(query)}&fields=files(id,name,parents)&pageSize=100&supportsAllDrives=true&includeItemsFromAllDrives=true");
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            var res = await _http.SendAsync(req);
+            if (!res.IsSuccessStatusCode) return;
+
+            var json = await res.Content.ReadFromJsonAsync<JsonNode>();
+            var files = json?["files"]?.AsArray();
+            if (files == null) return;
+
+            foreach (var f in files)
+            {
+                var id = f?["id"]?.ToString();
+                var name = f?["name"]?.ToString() ?? "";
+                if (string.IsNullOrEmpty(id) || id == appFolderId) continue;
+
+                // Move if name ends with "- Ảnh bìa", "Ảnh bìa", or contains "- Chap "
+                if (name.EndsWith(" - Ảnh bìa", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("Ảnh bìa", StringComparison.OrdinalIgnoreCase) ||
+                    name.Contains(" - Chap ", StringComparison.OrdinalIgnoreCase))
+                {
+                    var parent = f?["parents"]?[0]?.ToString() ?? "root";
+                    await MoveFileOrFolderAsync(id, appFolderId, parent, token);
+                    Console.WriteLine($"[GoogleDrive] Moved '{name}' ({id}) into akatruyen ({appFolderId})");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[GoogleDrive] Error moving root folders: {ex.Message}");
+        }
+    }
+
+    private async Task<string?> SearchFolderInParentAsync(string folderName, string parentId, string token)
+    {
+        try
+        {
+            var p = !string.IsNullOrWhiteSpace(parentId) && parentId != "root" ? parentId : "root";
+            var safeName = folderName.Replace("'", "\\'");
+            var query = $"'{p}' in parents and name = '{safeName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
+            using var searchReq = new HttpRequestMessage(HttpMethod.Get, $"https://www.googleapis.com/drive/v3/files?q={Uri.EscapeDataString(query)}&fields=files(id,name)&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true");
+            searchReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            var searchRes = await _http.SendAsync(searchReq);
+            if (searchRes.IsSuccessStatusCode)
+            {
+                var searchJson = await searchRes.Content.ReadFromJsonAsync<JsonNode>();
+                var existingFiles = searchJson?["files"]?.AsArray();
+                if (existingFiles != null && existingFiles.Count > 0)
+                {
+                    return existingFiles[0]?["id"]?.ToString();
+                }
+            }
+        }
+        catch { }
+        return null;
+    }
+
     public async Task<string> CreateFolderAsync(string folderName, string? parentFolderId = null)
     {
         var token = await GetAccessTokenAsync() ?? throw new InvalidOperationException("Chưa kết nối Google Drive.");
         var parent = !string.IsNullOrWhiteSpace(parentFolderId) ? parentFolderId : FolderId;
 
+        return await CreateFolderInternalAsync(folderName, parent, token, allowFallback: true);
+    }
+
+    private async Task<string> CreateFolderInternalAsync(string folderName, string? parent, string token, bool allowFallback)
+    {
         var metadata = new JsonObject
         {
             ["name"] = folderName,
-            ["mimeType"] = "application/vnd.google-apps.folder",
-            ["parents"] = new JsonArray { parent }
+            ["mimeType"] = "application/vnd.google-apps.folder"
         };
+        if (!string.IsNullOrWhiteSpace(parent) && parent != "root")
+        {
+            metadata["parents"] = new JsonArray { parent };
+        }
 
         using var req = new HttpRequestMessage(HttpMethod.Post, "https://www.googleapis.com/drive/v3/files?supportsAllDrives=true");
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -341,13 +555,16 @@ public class GoogleDriveService
         if (!res.IsSuccessStatusCode)
         {
             var err = await res.Content.ReadAsStringAsync();
+            if (allowFallback && (res.StatusCode == System.Net.HttpStatusCode.NotFound || res.StatusCode == System.Net.HttpStatusCode.Forbidden || err.Contains("notFound") || err.Contains("File not found")))
+            {
+                return await CreateFolderInternalAsync(folderName, "root", token, allowFallback: false);
+            }
             throw new InvalidOperationException($"Lỗi tạo thư mục Google Drive: {err}");
         }
 
         var json = await res.Content.ReadFromJsonAsync<JsonNode>();
         var folderId = json?["id"]?.ToString() ?? throw new InvalidOperationException("Không nhận được folder ID từ Google.");
 
-        // Make folder readable by anyone
         await MakePublicAsync(folderId, token);
         return folderId;
     }
@@ -357,23 +574,46 @@ public class GoogleDriveService
         var token = await GetAccessTokenAsync() ?? throw new InvalidOperationException("Chưa kết nối Google Drive. Vui lòng kết nối Google Drive trước khi upload.");
         var parent = !string.IsNullOrWhiteSpace(parentFolderId) ? parentFolderId : FolderId;
 
-        var boundary = "----TruyenDexDriveBoundary" + Guid.NewGuid().ToString("N");
-        using var content = new MultipartFormDataContent(boundary);
+        byte[] bytes;
+        if (stream is MemoryStream ms)
+        {
+            bytes = ms.ToArray();
+        }
+        else
+        {
+            using var mem = new MemoryStream();
+            if (stream.CanSeek) stream.Position = 0;
+            await stream.CopyToAsync(mem);
+            bytes = mem.ToArray();
+        }
+
+        return await UploadImageInternalAsync(bytes, fileName, contentType, parent, token, allowFallback: true);
+    }
+
+    private async Task<GoogleDriveUploadResult> UploadImageInternalAsync(byte[] bytes, string fileName, string contentType, string? parent, string token, bool allowFallback)
+    {
+        var boundary = "TruyenDexBoundary" + Guid.NewGuid().ToString("N");
+        using var content = new MultipartContent("related", boundary);
 
         // 1. Metadata part
         var metadata = new JsonObject
         {
-            ["name"] = fileName,
-            ["parents"] = new JsonArray { parent }
+            ["name"] = fileName
         };
+        if (!string.IsNullOrWhiteSpace(parent) && parent != "root")
+        {
+            metadata["parents"] = new JsonArray { parent };
+        }
         var metaContent = new StringContent(metadata.ToJsonString(), Encoding.UTF8, "application/json");
-        metaContent.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-        content.Add(metaContent, "metadata");
+        metaContent.Headers.ContentType = new MediaTypeHeaderValue("application/json") { CharSet = "UTF-8" };
+        metaContent.Headers.ContentDisposition = null;
+        content.Add(metaContent);
 
         // 2. Media part
-        var mediaContent = new StreamContent(stream);
+        var mediaContent = new ByteArrayContent(bytes);
         mediaContent.Headers.ContentType = new MediaTypeHeaderValue(string.IsNullOrWhiteSpace(contentType) ? "image/jpeg" : contentType);
-        content.Add(mediaContent, "media", fileName);
+        mediaContent.Headers.ContentDisposition = null;
+        content.Add(mediaContent);
 
         using var req = new HttpRequestMessage(HttpMethod.Post, "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true");
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -383,13 +623,16 @@ public class GoogleDriveService
         if (!res.IsSuccessStatusCode)
         {
             var err = await res.Content.ReadAsStringAsync();
+            if (allowFallback && (res.StatusCode == System.Net.HttpStatusCode.NotFound || res.StatusCode == System.Net.HttpStatusCode.Forbidden || err.Contains("notFound") || err.Contains("File not found")))
+            {
+                return await UploadImageInternalAsync(bytes, fileName, contentType, "root", token, allowFallback: false);
+            }
             throw new InvalidOperationException($"Lỗi tải ảnh lên Google Drive: {err}");
         }
 
         var resJson = await res.Content.ReadFromJsonAsync<JsonNode>();
         var fileId = resJson?["id"]?.ToString() ?? throw new InvalidOperationException("Không nhận được ID file tải lên từ Google Drive.");
 
-        // Make file public reader
         await MakePublicAsync(fileId, token);
 
         return new GoogleDriveUploadResult

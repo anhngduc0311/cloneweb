@@ -771,55 +771,82 @@ public static class AdminEndpoints
             {
                 return Results.BadRequest(new { message = "Google Drive chưa được liên kết. Vui lòng kết nối Google Drive trước khi tải ảnh." });
             }
-
-            var targetFolderId = !string.IsNullOrWhiteSpace(folderId) ? GoogleDriveService.ExtractFolderId(folderId) : drive.FolderId;
-
-            // Create a subfolder for this manga chapter if title and number are given
-            if (!string.IsNullOrWhiteSpace(mangaTitle) && chapterNumber.HasValue)
+            try
             {
+                var targetFolderId = !string.IsNullOrWhiteSpace(folderId) ? GoogleDriveService.ExtractFolderId(folderId) : drive.FolderId;
+                if (string.IsNullOrWhiteSpace(targetFolderId) || targetFolderId == "root" || targetFolderId == GoogleDriveService.DefaultFolderId)
+                {
+                    targetFolderId = await drive.GetOrCreateAppFolderAsync("akatruyen");
+                }
+
+                // Automatically create/find subfolder for this chapter or cover
                 try
                 {
-                    var subfolderName = $"{mangaTitle.Trim()} - Chap {chapterNumber}";
-                    var subId = await drive.CreateFolderAsync(subfolderName, targetFolderId);
+                    string subfolderName;
+                    var title = mangaTitle?.Trim();
+                    var hasValidTitle = !string.IsNullOrWhiteSpace(title) && !title.Equals("Covers", StringComparison.OrdinalIgnoreCase);
+
+                    if (chapterNumber.HasValue && chapterNumber.Value > 0)
+                    {
+                        subfolderName = hasValidTitle
+                            ? $"{title} - Chap {chapterNumber}"
+                            : $"Chap {chapterNumber}";
+                    }
+                    else
+                    {
+                        // Cover image upload
+                        subfolderName = hasValidTitle
+                            ? $"{title} - Ảnh bìa"
+                            : "Ảnh bìa";
+                    }
+
+                    var subId = await drive.FindOrCreateFolderAsync(subfolderName, targetFolderId);
                     if (!string.IsNullOrEmpty(subId))
                     {
                         targetFolderId = subId;
                     }
                 }
-                catch { }
-            }
-
-            // Natural sort files by filename so pages are in correct sequence
-            var orderedFiles = files
-                .OrderBy(f => Regex.Replace(f.FileName, @"\d+", m => m.Value.PadLeft(10, '0')))
-                .ToList();
-
-            var urls = new List<string>();
-            var fileList = new List<object>();
-
-            foreach (var file in orderedFiles)
-            {
-                if (file.Length == 0) continue;
-                using var stream = file.OpenReadStream();
-                var ct = file.ContentType;
-                if (string.IsNullOrEmpty(ct) || ct == "application/octet-stream")
+                catch (Exception subEx)
                 {
-                    ct = Path.GetExtension(file.FileName).ToLowerInvariant() switch
-                    {
-                        ".png" => "image/png",
-                        ".webp" => "image/webp",
-                        ".gif" => "image/gif",
-                        ".avif" => "image/avif",
-                        _ => "image/jpeg"
-                    };
+                    Console.WriteLine($"[GoogleDrive] Cannot find or create subfolder: {subEx.Message}");
                 }
 
-                var res = await drive.UploadImageAsync(stream, file.FileName, ct, targetFolderId);
-                urls.Add(res.DirectUrl);
-                fileList.Add(new { id = res.Id, name = file.FileName, directUrl = res.DirectUrl, proxyUrl = res.ProxyUrl, thumbnailUrl = res.ThumbnailUrl });
-            }
+                // Natural sort files by filename so pages are in correct sequence
+                var orderedFiles = files
+                    .OrderBy(f => Regex.Replace(f.FileName, @"\d+", m => m.Value.PadLeft(10, '0')))
+                    .ToList();
 
-            return Results.Ok(new { urls, items = fileList, folderId = targetFolderId });
+                var urls = new List<string>();
+                var fileList = new List<object>();
+
+                foreach (var file in orderedFiles)
+                {
+                    if (file.Length == 0) continue;
+                    using var stream = file.OpenReadStream();
+                    var ct = file.ContentType;
+                    if (string.IsNullOrEmpty(ct) || ct == "application/octet-stream")
+                    {
+                        ct = Path.GetExtension(file.FileName).ToLowerInvariant() switch
+                        {
+                            ".png" => "image/png",
+                            ".webp" => "image/webp",
+                            ".gif" => "image/gif",
+                            ".avif" => "image/avif",
+                            _ => "image/jpeg"
+                        };
+                    }
+
+                    var res = await drive.UploadImageAsync(stream, file.FileName, ct, targetFolderId);
+                    urls.Add(res.DirectUrl);
+                    fileList.Add(new { id = res.Id, name = file.FileName, directUrl = res.DirectUrl, proxyUrl = res.ProxyUrl, thumbnailUrl = res.ThumbnailUrl });
+                }
+
+                return Results.Ok(new { urls, items = fileList, folderId = targetFolderId });
+            }
+            catch (Exception ex)
+            {
+                return Results.BadRequest(new { message = ex.Message });
+            }
         }).DisableAntiforgery();
 
         admin.MapPost("/drive/scan-folder", async (DriveScanRequest req, GoogleDriveService drive) =>

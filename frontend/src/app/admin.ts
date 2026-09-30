@@ -223,6 +223,7 @@ export class AdminComponent implements OnInit {
 
   uploadingToDrive = signal(false);
   uploadingCoverToDrive = signal(false);
+  uploadingCoverLocal = signal(false);
   driveUploadProgress = signal<{ current: number; total: number; percent: number; currentFile: string }>({
     current: 0,
     total: 0,
@@ -231,12 +232,12 @@ export class AdminComponent implements OnInit {
   });
 
   driveScanModalOpen = signal(false);
-  driveScanFolderUrl = signal('https://drive.google.com/drive/folders/1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9');
+  driveScanFolderUrl = signal('');
   isScanningDrive = signal(false);
   scannedDriveFiles = signal<any[]>([]);
 
   driveConfigModalOpen = signal(false);
-  driveConfigFolderId = signal('1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9');
+  driveConfigFolderId = signal('');
   driveConfigManualToken = signal('');
   driveConfigApiKey = signal('');
   isSavingDriveConfig = signal(false);
@@ -706,11 +707,11 @@ export class AdminComponent implements OnInit {
       formData.append('files', file);
 
       const queryParams = new URLSearchParams();
-      if (this.driveStatus()?.folderId) {
-        queryParams.set('folderId', this.driveStatus()!.folderId);
+      const currentFolderId = this.driveStatus()?.folderId;
+      if (currentFolderId && currentFolderId !== 'root') {
+        queryParams.set('folderId', currentFolderId);
       }
       queryParams.set('mangaTitle', this.currentManga.title?.trim() || 'Covers');
-      queryParams.set('chapterNumber', '0');
 
       const res = await fetch('/api/admin/drive/upload-images?' + queryParams.toString(), {
         method: 'POST',
@@ -734,6 +735,44 @@ export class AdminComponent implements OnInit {
       this.store.notify(e.message || 'Lỗi khi upload ảnh bìa lên Google Drive.');
     } finally {
       this.uploadingCoverToDrive.set(false);
+      input.value = '';
+    }
+  }
+
+  async onCoverUploadLocal(event: Event) {
+    const input = event.target as HTMLInputElement;
+    if (!input.files || input.files.length === 0) return;
+
+    const file = input.files[0];
+    this.uploadingCoverLocal.set(true);
+
+    try {
+      const token = this.store.getToken();
+      const formData = new FormData();
+      formData.append('files', file);
+
+      const res = await fetch('/api/admin/chapters/upload-images', {
+        method: 'POST',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: formData
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || 'Tải ảnh bìa lên máy chủ thất bại.');
+      }
+
+      const data = await res.json();
+      if (data.urls && data.urls.length > 0) {
+        this.currentManga.cover = data.urls[0];
+        this.store.notify('Đã tải ảnh bìa lên máy chủ thành công!');
+      }
+    } catch (e: any) {
+      this.store.notify(e.message || 'Lỗi khi upload ảnh bìa.');
+    } finally {
+      this.uploadingCoverLocal.set(false);
       input.value = '';
     }
   }
@@ -832,7 +871,7 @@ export class AdminComponent implements OnInit {
 
     try {
       const token = this.store.getToken();
-      let activeFolderId = this.driveStatus()?.folderId || '';
+      let activeFolderId = (this.driveStatus()?.folderId && this.driveStatus()!.folderId !== 'root') ? this.driveStatus()!.folderId : '';
       const allUrls: string[] = [];
       const batchSize = 3;
 

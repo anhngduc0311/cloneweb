@@ -369,7 +369,7 @@
                   </span>
                 </div>
                 <div class="drive-banner-desc">
-                  Thư mục đích: <code>{{ driveStatus()?.folderId || '1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9' }}</code>
+                  Thư mục đích: <code>{{ driveStatus()?.folderId || 'akatruyen' }}</code>
                   @if(driveStatus()?.email){
                     <span class="dot-sep">•</span>
                     <span>{{ driveStatus()?.email }}</span>
@@ -803,10 +803,10 @@
                 <span class="kpi-icon-wrap manga-icon"><app-icon name="folder"/></span>
               </div>
               <div class="kpi-value" style="font-size: 1.05rem; word-break: break-all;">
-                {{ driveStatus()?.folderId || '1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9' }}
+                {{ driveStatus()?.folderId || 'akatruyen' }}
               </div>
               <div class="kpi-meta">
-                <a [href]="driveStatus()?.folderUrl || 'https://drive.google.com/drive/folders/1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9'" target="_blank" rel="noopener" class="highlight-link">
+                <a [href]="driveStatus()?.folderUrl || 'https://drive.google.com/drive/my-drive'" target="_blank" rel="noopener" class="highlight-link">
                   <app-icon name="link"/> Mở thư mục trên Google Drive
                 </a>
               </div>
@@ -1455,10 +1455,10 @@
             <div class="drive-box-details">
               <div class="drive-box-folder">
                 <span class="lbl">Thư mục gốc:</span>
-                <code>{{ driveStatus()?.folderId || '1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9' }}</code>
+                <code>{{ driveStatus()?.folderId || 'akatruyen' }}</code>
               </div>
               <div class="drive-box-links">
-                <a [href]="driveStatus()?.folderUrl || 'https://drive.google.com/drive/folders/1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9'" target="_blank" rel="noopener" class="link-drive-ext">
+                <a [href]="driveStatus()?.folderUrl || 'https://drive.google.com/drive/my-drive'" target="_blank" rel="noopener" class="link-drive-ext">
                   <app-icon name="link"/> <span>Mở trên Google Drive</span>
                 </a>
                 <button type="button" class="link-drive-scan" (click)="openDriveScanModal()">
@@ -1525,11 +1525,16 @@
           <div class="form-group">
             <div class="label-with-action">
               <label>Ảnh bìa (Cover URL)</label>
-              <div class="cover-drive-actions">
+              <div class="cover-drive-actions" style="display:flex;gap:8px;">
                 <label class="btn-file-upload btn-drive-upload-sm" [class.btn-uploading]="uploadingCoverToDrive()">
                   <input type="file" accept="image/*" (change)="onDriveCoverUpload($event)" [disabled]="uploadingCoverToDrive()" style="display:none">
                   <app-icon name="cloud"/>
                   <span>{{ uploadingCoverToDrive() ? 'Đang tải lên Drive...' : 'Upload bìa lên Google Drive' }}</span>
+                </label>
+                <label class="btn-file-upload btn-local-upload-sm" [class.btn-uploading]="uploadingCoverLocal()">
+                  <input type="file" accept="image/*" (change)="onCoverUploadLocal($event)" [disabled]="uploadingCoverLocal()" style="display:none">
+                  <app-icon name="image"/>
+                  <span>{{ uploadingCoverLocal() ? 'Đang tải...' : 'Tải lên máy chủ' }}</span>
                 </label>
               </div>
             </div>
@@ -1683,9 +1688,9 @@
                     <span class="drive-email-tag">({{ driveStatus()?.email }})</span>
                   }
                   <span class="drive-folder-tag">
-                    Folder ID: <strong>{{ driveStatus()?.folderId || '1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9' }}</strong>
+                    Folder ID: <strong>{{ driveStatus()?.folderId || 'akatruyen' }}</strong>
                   </span>
-                  <a [href]="driveStatus()?.folderUrl || 'https://drive.google.com/drive/folders/1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9'" target="_blank" rel="noopener" class="drive-link-external">
+                  <a [href]="driveStatus()?.folderUrl || 'https://drive.google.com/drive/my-drive'" target="_blank" rel="noopener" class="drive-link-external">
                     <app-icon name="link"/> <span>Mở trên Drive</span>
                   </a>
                 </div>
@@ -2172,11 +2177,11 @@
           <!-- Target Folder ID -->
           <div class="form-group mb-3">
             <label>ID hoặc Link thư mục đích (Folder ID) <span class="req">*</span></label>
-            <input type="text" [(ngModel)]="driveConfigFolderId" placeholder="1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9">
+            <input type="text" [(ngModel)]="driveConfigFolderId" placeholder="Để trống: Tự động dùng thư mục akatruyen">
             <small class="muted">
-              Mặc định: <code>1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9</code>.
-              <a [href]="driveStatus()?.folderUrl || 'https://drive.google.com/drive/folders/1vXTYGlxj_X3Oc-jfLawkS-_r1O8JUPG9'" target="_blank" rel="noopener" class="text-link">
-                Mở thư mục này trên Drive →
+              Mặc định: Tự động lưu vào thư mục <code>akatruyen</code> trên Google Drive của bạn.
+              <a [href]="driveStatus()?.folderUrl || 'https://drive.google.com/drive/my-drive'" target="_blank" rel="noopener" class="text-link">
+                Mở thư mục trên Drive →
               </a>
             </small>
           </div>
