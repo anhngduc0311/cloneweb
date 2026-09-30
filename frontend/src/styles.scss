@@ -4579,7 +4579,7 @@ small {
   .reader-header {
     width: 100% !important;
     max-width: 100% !important;
-    overflow: hidden;
+    overflow: visible;
   }
 
   .reader-header-inner {
@@ -4592,7 +4592,7 @@ small {
     width: 100% !important;
     max-width: 100% !important;
     box-sizing: border-box;
-    overflow: hidden;
+    overflow: visible;
 
     .reader-title-box {
       flex: 0 0 auto;

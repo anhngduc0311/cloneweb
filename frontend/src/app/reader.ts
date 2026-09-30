@@ -892,11 +892,9 @@ export class Reader implements OnInit, OnDestroy {
     this.showScrollTop = currentScrollY > 400;
 
     // Smart Header Auto-hide
-    if (!this.isPinned && !this.isHeaderHovered) {
+    if (!this.isPinned && !this.isHeaderHovered && !this.showZoomMenu && !this.showSpeedMenu) {
       if (currentScrollY > 60 && currentScrollY > this.lastScrollY + 8) {
         this.isHeaderHidden = true;
-        this.showZoomMenu = false;
-        this.showSpeedMenu = false;
       } else if (currentScrollY < this.lastScrollY - 8 || currentScrollY <= 20) {
         this.isHeaderHidden = false;
       }
