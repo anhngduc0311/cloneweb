@@ -1,7 +1,7 @@
 import { Injectable, signal, computed } from '@angular/core';
 
 export interface Chapter { id:string; mangaId:string; title:string; number:number; language:string; publishedAt:string; group:string; }
-export interface Manga { id:string; title:string; alternativeTitle:string; author:string; cover:string; description:string; genres:string[]; status:string; country:string; demographic:string; contentRating:string; year:number|null; rating:number; follows:number; updatedAt:string; chapters:Chapter[]; }
+export interface Manga { id:string; title:string; alternativeTitle:string; author:string; cover:string; description:string; genres:string[]; status:string; country:string; demographic:string; contentRating:string; year:number|null; rating:number; follows:number; updatedAt:string; chapters:Chapter[]; totalChapters?:number; }
 export interface Page<T> { items:T[]; total:number; page:number; pageSize:number; }
 export interface Reader { chapter:Chapter; manga:Manga; pages:string[]; dataSaverPages:string[]; externalUrl:string|null; navigation:Chapter[]; }
 export interface User { id:string; name:string; email:string; role:string; coins?:number; isBanned?:boolean; }

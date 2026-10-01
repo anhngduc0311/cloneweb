@@ -98,6 +98,7 @@ import { Icon, MangaCardComponent, Pagination } from './ui';
           <option value="new">Truyện mới đăng</option>
           <option value="hot">Theo dõi nhiều nhất</option>
           <option value="rating">Đánh giá cao nhất</option>
+          <option value="chapters">Nhiều chap nhất</option>
           <option value="title">Bảng chữ cái (A-Z)</option>
         </select>
       </label>

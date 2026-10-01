@@ -369,6 +369,7 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
                 chapters.Add(new ChapterCard(chapId, mangaId, chapTitle, num, "vi", updatedAt, "TruyenGG"));
             }
 
+            var maxChap = chapters.Count > 0 ? (int)Math.Round(chapters.Max(c => c.Number)) : 0;
             var card = new MangaCard
             {
                 Id = mangaId,
@@ -385,7 +386,8 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
                 Follows = follows,
                 Rating = 8.5,
                 UpdatedAt = updatedAt,
-                Chapters = chapters
+                Chapters = chapters,
+                TotalChapters = maxChap
             };
 
             items.Add(card);
@@ -527,6 +529,7 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
                                 PublishedAt: DateTime.UtcNow,
                                 Group: "TruyenGG"
                             ));
+                            card.TotalChapters = (int)Math.Round(chapNum);
                         }
 
                         items.Add(card);

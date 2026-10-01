@@ -28,6 +28,7 @@ public class MangaCard
     public int Follows { get; set; }
     public DateTime UpdatedAt { get; set; }
     public List<ChapterCard> Chapters { get; set; } = [];
+    public int TotalChapters { get; set; }
 }
 public record CatalogPage(List<MangaCard> Items, int Total, int Page, int PageSize);
 public record ChapterPage(List<ChapterCard> Items, int Total, int Page, int PageSize);
@@ -128,6 +129,13 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         var file = S(rel.FirstOrDefault(x => S(x?["type"]) == "cover_art")?["attributes"]?["fileName"]);
         var sizeExt = isThumbnail ? ".256.jpg" : ".512.jpg";
         var coverUrl = $"https://mangadex.org/covers/{id}/{file}{sizeExt}";
+        var lastChapStr = S(a["lastChapter"]);
+        int totalChaps = 0;
+        if (decimal.TryParse(lastChapStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsedChaps))
+        {
+            totalChaps = (int)Math.Round(parsedChaps);
+        }
+
         return new MangaCard {
             Id = id,
             Title = displayTitle,
@@ -141,7 +149,8 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             ContentRating = S(a["contentRating"]),
             Year = (int?)a["year"],
             Genres = a["tags"]!.AsArray().Select(x => Localized(x?["attributes"]?["name"])).ToArray(),
-            UpdatedAt = Date(a["updatedAt"])
+            UpdatedAt = Date(a["updatedAt"]),
+            TotalChapters = totalChaps
         };
     }
 
@@ -565,7 +574,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
     public async Task<CatalogPage> Search(int page, int size, string? q, string? genre, string? status, string? country, string? demographic, string? language, string? sort, int? year)
     {
-        var cacheKey = $"catalog:search:v10:{page}:{size}:{q}:{genre}:{status}:{country}:{demographic}:{language}:{sort}:{year}";
+        var cacheKey = $"catalog:search:v11:{page}:{size}:{q}:{genre}:{status}:{country}:{demographic}:{language}:{sort}:{year}";
         var cachedSearch = await CacheGet<CatalogPage>(cacheKey);
         if (cachedSearch != null)
         {
@@ -579,8 +588,9 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             return cachedSearch;
         }
 
-        var order = sort switch { "rating" => "rating", "hot" => "followedCount", "title" => "title", "new" => "createdAt", _ => "latestUploadedChapter" };
-        var path = $"/manga?limit={size}&offset={(page - 1) * size}&includes[]=cover_art&includes[]=author&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&order[{order}]={(order == "title" ? "asc" : "desc")}";
+        var order = sort switch { "rating" => "rating", "hot" => "followedCount", "title" => "title", "new" => "createdAt", "chapters" => "followedCount", _ => "latestUploadedChapter" };
+        var fetchLimit = sort == "chapters" ? Math.Clamp(size * 2, 24, 60) : size;
+        var path = $"/manga?limit={fetchLimit}&offset={(page - 1) * size}&includes[]=cover_art&includes[]=author&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&order[{order}]={(order == "title" ? "asc" : "desc")}";
         if (!string.IsNullOrWhiteSpace(q)) path += "&title=" + E(q.Trim());
         if (Guid.TryParse(genre, out var tag)) path += "&includedTags[]=" + tag;
         if (new[] { "ongoing", "completed", "hiatus", "cancelled" }.Contains(status)) path += "&status[]=" + status;
@@ -691,10 +701,19 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             catch { }
         }
 
-        // Sort items by relevance to search query
-        if (!string.IsNullOrWhiteSpace(q) && items.Count > 1)
+        // Sort items by chapter count or relevance to search query
+        if (sort == "chapters" && items.Count > 1)
+        {
+            items = items.OrderByDescending(m => GetChapterCount(m)).ToList();
+        }
+        else if (!string.IsNullOrWhiteSpace(q) && items.Count > 1)
         {
             items = items.OrderBy(m => GetRelevanceScore(m, q.Trim())).ToList();
+        }
+
+        if (items.Count > size)
+        {
+            items = items.Take(size).ToList();
         }
 
         if (total < items.Count) total = items.Count;
@@ -753,11 +772,28 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
                     if (chapGroups.TryGetValue(m.Id, out var chaps))
                     {
                         m.Chapters = chaps;
+                        if (chaps.Count > 0)
+                        {
+                            var maxChap = (int)Math.Round(chaps.Max(c => c.Number));
+                            if (maxChap > m.TotalChapters) m.TotalChapters = maxChap;
+                        }
                     }
                 }
             }
         }
         catch { }
+    }
+
+    public static int GetChapterCount(MangaCard m)
+    {
+        var count = m.TotalChapters;
+        if (m.Chapters != null && m.Chapters.Count > 0)
+        {
+            var maxNum = (int)Math.Round(m.Chapters.Max(c => c.Number));
+            if (maxNum > count) count = maxNum;
+            if (m.Chapters.Count > count) count = m.Chapters.Count;
+        }
+        return count;
     }
 
     public async Task<MangaCard> Detail(Guid id)
