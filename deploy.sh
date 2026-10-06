@@ -9,15 +9,17 @@ ENV_FILE="$ROOT_DIR/.env.production"
 COMPOSE_FILE="$ROOT_DIR/compose.production.yaml"
 INSTALL_DOCKER=false
 CHECK_ONLY=false
+SKIP_SWAP=false
 
 log() { printf '\n[deploy] %s\n' "$*"; }
 die() { printf '\n[deploy] ERROR: %s\n' "$*" >&2; exit 1; }
 usage() {
   cat <<'HELP'
-Usage: bash deploy.sh [--install-docker] [--check]
+Usage: bash deploy.sh [--install-docker] [--no-swap] [--check]
 
   --install-docker  Install Docker Engine + Compose from Docker's Ubuntu APT
                     repository if Docker/Compose is missing (requires sudo).
+  --no-swap         Skip automatic 4GB swap space creation/check.
   --check           Prepare .env.production and validate Compose; do not deploy.
   --help            Show this help.
 
@@ -33,6 +35,7 @@ HELP
 for arg in "$@"; do
   case "$arg" in
     --install-docker) INSTALL_DOCKER=true ;;
+    --no-swap) SKIP_SWAP=true ;;
     --check) CHECK_ONLY=true ;;
     --help|-h) usage; exit 0 ;;
     *) die "Unknown argument: $arg. Use --help." ;;
@@ -52,6 +55,64 @@ flock -n 9 || die 'Another deployment is running in this checkout.'
 as_root() {
   if (( EUID == 0 )); then "$@"; else sudo -- "$@"; fi
 }
+
+ensure_swap() {
+  if "$SKIP_SWAP"; then
+    log 'Skipping swap configuration (--no-swap specified).'
+    return 0
+  fi
+
+  local swap_file="/swapfile"
+  local current_swap_mb
+  current_swap_mb="$(free -m 2>/dev/null | awk '/^Swap:/ {print $2}' || true)"
+
+  if [[ -n "$current_swap_mb" && "$current_swap_mb" =~ ^[0-9]+$ ]] && (( current_swap_mb >= 3800 )); then
+    log "Swap memory is already sufficient (${current_swap_mb}MB active)."
+    return 0
+  fi
+
+  if command -v swapon >/dev/null && swapon --show=NAME --noheadings 2>/dev/null | grep -Fxq "$swap_file"; then
+    log "Swapfile $swap_file is already active."
+    return 0
+  fi
+
+  if [[ -f "$swap_file" ]]; then
+    local file_size
+    file_size="$(stat -c %s "$swap_file" 2>/dev/null || echo 0)"
+    if [[ "$file_size" =~ ^[0-9]+$ ]] && (( file_size >= 1024 * 1024 * 1024 )); then
+      log "Found existing $swap_file. Activating swap..."
+      as_root chmod 600 "$swap_file"
+      as_root swapon "$swap_file" 2>/dev/null || true
+      return 0
+    fi
+    log "Removing incomplete existing $swap_file..."
+    as_root rm -f "$swap_file"
+  fi
+
+  log 'Configuring 4GB swap space...'
+  (( EUID == 0 )) || command -v sudo >/dev/null || die 'sudo is required to configure swap.'
+
+  if ! as_root fallocate -l 4G "$swap_file" 2>/dev/null || ! as_root mkswap "$swap_file" >/dev/null 2>&1; then
+    log 'Allocating 4GB swap via dd...'
+    as_root rm -f "$swap_file"
+    as_root dd if=/dev/zero of="$swap_file" bs=1M count=4096 status=none
+    as_root mkswap "$swap_file" >/dev/null
+  fi
+
+  as_root chmod 600 "$swap_file"
+  as_root swapon "$swap_file"
+
+  if ! grep -qs "^[[:space:]]*${swap_file}[[:space:]]" /etc/fstab 2>/dev/null; then
+    echo "$swap_file none swap sw 0 0" | as_root tee -a /etc/fstab >/dev/null
+  fi
+
+  as_root sysctl vm.swappiness=10 >/dev/null 2>&1 || true
+  as_root sysctl vm.vfs_cache_pressure=50 >/dev/null 2>&1 || true
+
+  log '4GB swap configured and enabled successfully.'
+}
+
+ensure_swap
 
 if ! command -v docker >/dev/null || ! docker compose version >/dev/null 2>&1; then
   "$INSTALL_DOCKER" || die 'Docker Engine + Compose required. Re-run with --install-docker.'
