@@ -290,23 +290,6 @@
 
         <!-- Drawer Links List -->
         <nav class="drawer-nav">
-          <div class="nav-section-label">KHÁM PHÁ</div>
-          <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact:true}" (click)="menu.set(false)">
-            <app-icon name="home"/> <span>Trang chủ</span>
-          </a>
-          <a routerLink="/tim-truyen-nang-cao" [queryParams]="{sort:'hot'}" routerLinkActive="active" (click)="menu.set(false)">
-            <app-icon name="fire"/> <span>Truyện Hot Manhwa</span>
-          </a>
-          <a routerLink="/tim-truyen-nang-cao" [queryParams]="{sort:'rating'}" routerLinkActive="active" (click)="menu.set(false)">
-            <app-icon name="star"/> <span>Truyện Yêu thích</span>
-          </a>
-          <a routerLink="/" [queryParams]="{page:1}" (click)="menu.set(false)">
-            <app-icon name="clock"/> <span>Mới cập nhật</span>
-          </a>
-          <a routerLink="/tim-truyen-nang-cao" routerLinkActive="active" [routerLinkActiveOptions]="{exact:true}" (click)="menu.set(false)">
-            <app-icon name="compass"/> <span>Tìm truyện nâng cao</span>
-          </a>
-
           <div class="nav-section-label">THỂ LOẠI & ĐỐI TƯỢNG</div>
           <button class="drawer-genre-toggle" (click)="genres()">
             <span class="genre-toggle-left"><app-icon name="tag"/> <span>Thể loại truyện</span></span>
