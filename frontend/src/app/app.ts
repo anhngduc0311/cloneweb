@@ -1,4 +1,4 @@
-import { Component, signal, inject, HostListener, ElementRef } from '@angular/core';
+import { Component, signal, inject, HostListener, ElementRef, OnInit } from '@angular/core';
 import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { Icon } from './ui';
@@ -10,7 +10,7 @@ import { Api, Store, Settings, Manga, statuses } from './core';
   templateUrl: './app.html',
   styleUrl: './app.scss'
 })
-export class App {
+export class App implements OnInit {
   store = inject(Store);
   api = inject(Api);
   router = inject(Router);
@@ -61,6 +61,25 @@ export class App {
         }
       }
     });
+  }
+
+  ngOnInit(): void {
+    if (typeof window !== 'undefined') {
+      const hideSplash = () => {
+        const splash = document.getElementById('app-splash');
+        if (splash && !splash.classList.contains('fade-out')) {
+          splash.classList.add('fade-out');
+          setTimeout(() => splash.remove(), 500);
+        }
+      };
+
+      if (document.readyState === 'complete') {
+        setTimeout(hideSplash, 300);
+      } else {
+        window.addEventListener('load', () => setTimeout(hideSplash, 150), { once: true });
+        setTimeout(hideSplash, 900);
+      }
+    }
   }
 
   toggleTheme() {

@@ -74,9 +74,120 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600&display=swap" rel="stylesheet">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <style>
+    #app-splash {
+      position: fixed;
+      inset: 0;
+      z-index: 999999;
+      background: #090d14;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.45s ease;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #app-splash.fade-out {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .splash-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      animation: splashAppear 0.4s ease-out forwards;
+    }
+    .splash-logo-wrap {
+      position: relative;
+      width: 76px;
+      height: 76px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 14px;
+    }
+    .splash-glow {
+      position: absolute;
+      inset: -12px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(245, 170, 98, 0.45) 0%, rgba(232, 120, 64, 0.15) 50%, transparent 70%);
+      filter: blur(14px);
+      animation: splashPulse 2s ease-in-out infinite alternate;
+    }
+    .splash-logo {
+      position: relative;
+      width: 64px;
+      height: 64px;
+      animation: splashFloat 2.4s ease-in-out infinite;
+      filter: drop-shadow(0 4px 14px rgba(245, 170, 98, 0.35));
+    }
+    .splash-brand {
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      color: #f8fafc;
+      margin-bottom: 22px;
+    }
+    .splash-brand span {
+      color: #f5a000;
+    }
+    .splash-brand .splash-dot {
+      color: #e87840;
+    }
+    .splash-loader {
+      width: 140px;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 99px;
+      overflow: hidden;
+      position: relative;
+    }
+    .splash-progress {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 45%;
+      background: linear-gradient(90deg, #f5aa62, #e87840);
+      border-radius: 99px;
+      animation: splashIndeterminate 1.4s infinite cubic-bezier(0.65, 0, 0.35, 1);
+    }
+    @keyframes splashAppear {
+      from { opacity: 0; transform: scale(0.92); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    @keyframes splashPulse {
+      0% { transform: scale(0.9); opacity: 0.6; }
+      100% { transform: scale(1.15); opacity: 1; }
+    }
+    @keyframes splashFloat {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-5px); }
+    }
+    @keyframes splashIndeterminate {
+      0% { left: -45%; width: 35%; }
+      50% { left: 35%; width: 55%; }
+      100% { left: 100%; width: 35%; }
+    }
+  </style>
 </head>
 <body>
+  <div id="app-splash" aria-hidden="true">
+    <div class="splash-content">
+      <div class="splash-logo-wrap">
+        <div class="splash-glow"></div>
+        <img class="splash-logo" src="/brand-mark.svg" width="64" height="64" alt="AkaTruyen Logo">
+      </div>
+      <div class="splash-brand">aka<span>truyen</span><span class="splash-dot">.</span></div>
+      <div class="splash-loader">
+        <div class="splash-progress"></div>
+      </div>
+    </div>
+  </div>
   <app-root></app-root>
 </body>
 </html>
