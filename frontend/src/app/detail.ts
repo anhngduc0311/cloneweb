@@ -16,7 +16,7 @@ import { Sidebar } from './sidebar';
     <span>Quay lại</span>
   </button>
   <span class="breadcrumb-sep">›</span>
-  <a routerLink="/" (click)="goBack($event)">Trang chủ</a>
+  <a routerLink="/">Trang chủ</a>
   <span class="breadcrumb-sep">›</span>
   <span class="current-crumb">{{manga()?.title || 'Chi tiết truyện'}}</span>
 </div>

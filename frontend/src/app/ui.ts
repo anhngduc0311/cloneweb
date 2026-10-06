@@ -95,7 +95,7 @@ export class Icon {
   <div class="mini-chapters">
     @for(c of manga().chapters.slice(0, 3); track c.id){
       <div class="mini-chap-item">
-        <a [routerLink]="['/chuong', c.id]" [title]="c.title">{{c.title}}</a>
+        <a [routerLink]="['/chuong', c.id]" (click)="savePosition()" [title]="c.title">{{c.title}}</a>
         <time>{{ago(c.publishedAt)}}</time>
       </div>
     }
@@ -117,8 +117,16 @@ export class MangaCardComponent {
 
   savePosition() {
     if (typeof window !== 'undefined') {
-      sessionStorage.setItem('home_scroll_y', window.scrollY.toString());
-      sessionStorage.setItem('home_manga_id', this.manga().id);
+      const isSearch = window.location.pathname.includes('/tim-truyen-nang-cao');
+      if (isSearch) {
+        sessionStorage.setItem('search_scroll_y', window.scrollY.toString());
+        sessionStorage.setItem('search_manga_id', this.manga().id);
+      } else {
+        sessionStorage.setItem('home_scroll_y', window.scrollY.toString());
+        sessionStorage.setItem('home_manga_id', this.manga().id);
+      }
+      sessionStorage.setItem('last_scroll_y', window.scrollY.toString());
+      sessionStorage.setItem('last_manga_id', this.manga().id);
     }
   }
 

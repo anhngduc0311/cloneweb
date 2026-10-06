@@ -4500,6 +4500,13 @@ small {
     border-top: 1px solid var(--border);
     z-index: 400;
     box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
+    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: transform;
+
+    &.is-hidden {
+      transform: translateY(100%);
+      pointer-events: none;
+    }
 
     .dock-item {
       display: flex;

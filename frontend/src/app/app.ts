@@ -25,6 +25,8 @@ export class App {
   tags = signal<{ id: string; name: string }[]>([]);
   draft: Settings = { ...this.store.settings() };
   reader = signal(false);
+  isDockHidden = signal(false);
+  private lastScrollY = 0;
 
   // Search suggestions state
   suggestions = signal<Manga[]>([]);
@@ -47,6 +49,8 @@ export class App {
         this.genresOpen.set(false);
         this.suggestionsOpen.set(false);
         this.mobileSearchOpen.set(false);
+        this.isDockHidden.set(false);
+        this.lastScrollY = 0;
         this.reader.set(e.urlAfterRedirects.includes('/chuong/'));
 
         const hasSavedHomeScroll = typeof window !== 'undefined' && (sessionStorage.getItem('home_scroll_y') || sessionStorage.getItem('home_manga_id'));
@@ -199,6 +203,21 @@ export class App {
         this.store.notify('Không tải được thể loại. Vui lòng thử lại.');
       }
     }
+  }
+
+  @HostListener('window:scroll')
+  onScroll(): void {
+    if (typeof window === 'undefined') return;
+    const currentScrollY = window.scrollY;
+
+    // Auto-hide bottom dock on mobile when scrolling down, reveal when scrolling up
+    if (currentScrollY > 60 && currentScrollY > this.lastScrollY + 8) {
+      this.isDockHidden.set(true);
+    } else if (currentScrollY < this.lastScrollY - 8 || currentScrollY <= 30) {
+      this.isDockHidden.set(false);
+    }
+
+    this.lastScrollY = currentScrollY;
   }
 
   @HostListener('window:keydown.escape')

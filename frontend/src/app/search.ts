@@ -203,11 +203,19 @@ export class Search {
   }
 
   submit() {
+    sessionStorage.removeItem('search_scroll_y');
+    sessionStorage.removeItem('search_manga_id');
+    sessionStorage.removeItem('last_scroll_y');
+    sessionStorage.removeItem('last_manga_id');
     void this.router.navigate(['/tim-truyen-nang-cao'], { queryParams: this.cleanParams(1) });
   }
 
   reset() {
     this.api.clearCache('/catalog/search');
+    sessionStorage.removeItem('search_scroll_y');
+    sessionStorage.removeItem('search_manga_id');
+    sessionStorage.removeItem('last_scroll_y');
+    sessionStorage.removeItem('last_manga_id');
     this.form = this.defaults();
     void this.router.navigate(['/tim-truyen-nang-cao']);
   }
@@ -234,10 +242,54 @@ export class Search {
   }
 
   goPage = (page: number) => {
+    sessionStorage.removeItem('search_scroll_y');
+    sessionStorage.removeItem('search_manga_id');
     this.prefetchPage(page);
     void this.router.navigate([], { relativeTo: this.route, queryParams: this.cleanParams(page) });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  restorePosition() {
+    if (typeof window === 'undefined') return;
+    const savedY = sessionStorage.getItem('search_scroll_y') || sessionStorage.getItem('last_scroll_y');
+    const savedMangaId = sessionStorage.getItem('search_manga_id') || sessionStorage.getItem('last_manga_id');
+    if (!savedY && !savedMangaId) return;
+
+    const attemptRestore = (retries: number) => {
+      let restored = false;
+      if (savedMangaId) {
+        const targetEl = document.getElementById('manga-card-' + savedMangaId) || 
+                         document.querySelector(`[data-manga-id="${savedMangaId}"]`);
+        if (targetEl) {
+          const rect = targetEl.getBoundingClientRect();
+          const targetY = window.scrollY + rect.top - 80;
+          window.scrollTo({ top: Math.max(0, targetY), behavior: 'instant' });
+          targetEl.classList.add('last-viewed-highlight');
+          setTimeout(() => targetEl.classList.remove('last-viewed-highlight'), 2500);
+          restored = true;
+        }
+      }
+
+      if (!restored && savedY) {
+        const y = Number(savedY);
+        if (!isNaN(y) && y > 0) {
+          window.scrollTo({ top: y, behavior: 'instant' });
+          restored = true;
+        }
+      }
+
+      if (!restored && retries > 0) {
+        setTimeout(() => attemptRestore(retries - 1), 60);
+      } else {
+        sessionStorage.removeItem('search_scroll_y');
+        sessionStorage.removeItem('search_manga_id');
+        sessionStorage.removeItem('last_scroll_y');
+        sessionStorage.removeItem('last_manga_id');
+      }
+    };
+
+    setTimeout(() => attemptRestore(5), 40);
+  }
 
   async load() {
     const p = this.page();
@@ -251,6 +303,7 @@ export class Search {
       this.total.set(cached.total);
       this.loading.set(false);
       this.prefetchAdjacent();
+      this.restorePosition();
       return;
     }
 
@@ -261,6 +314,7 @@ export class Search {
         this.items.set(r.items);
         this.total.set(r.total);
         this.prefetchAdjacent();
+        this.restorePosition();
       }
     } catch (e) {
       if (n === this.epoch) this.error.set(message(e));
