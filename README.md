@@ -21,6 +21,8 @@ docker compose -f compose.production.yaml down -v
 
 ## Deploy lên VPS Ubuntu
 
+sudo apt update && sudo apt install -y git && sudo apt install nano -y
+
 Upload hoặc clone **toàn bộ project** lên VPS, rồi chạy tại thư mục chứa `deploy.sh`:
 
 ```bash
