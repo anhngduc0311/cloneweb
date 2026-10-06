@@ -154,8 +154,8 @@ app.MapPost("/api/auth/login", async (LoginRequest req, AppDb db, PasswordHasher
     return Results.Ok(Session(u));
 }).RequireRateLimiting("auth");
 
-var googleClientId = builder.Configuration["Google:ClientId"] ?? "";
-var googleClientSecret = builder.Configuration["Google:ClientSecret"] ?? "";
+var googleClientId = builder.Configuration["Google:ClientId"] ?? builder.Configuration["GOOGLE_CLIENT_ID"] ?? "";
+var googleClientSecret = builder.Configuration["Google:ClientSecret"] ?? builder.Configuration["GOOGLE_CLIENT_SECRET"] ?? "";
 
 app.MapGet("/api/auth/google/config", () => Results.Ok(new { clientId = googleClientId }));
 
