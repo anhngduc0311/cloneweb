@@ -1432,9 +1432,10 @@ small {
 .section-header-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
+.view-all-btn,
 .view-all-manhwa-link {
   display: inline-flex;
   align-items: center;
