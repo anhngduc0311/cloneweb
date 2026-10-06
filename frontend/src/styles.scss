@@ -2384,6 +2384,23 @@ small {
     }
   }
 
+  .author-link {
+    color: var(--accent);
+    font-weight: 600;
+    text-decoration: none;
+    transition: color 0.15s ease, text-decoration 0.15s ease;
+
+    &:hover {
+      text-decoration: underline;
+      filter: brightness(1.2);
+    }
+  }
+
+  .author-sep {
+    color: var(--muted);
+    margin: 0 2px;
+  }
+
   .year {
     margin-left: 6px;
     color: var(--muted);
@@ -2643,6 +2660,58 @@ small {
   border-radius: var(--radius-lg);
   padding: 20px;
   margin-bottom: 28px;
+
+  .active-author-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 16px;
+    margin-bottom: 16px;
+    background: rgba(225, 29, 72, 0.12);
+    border: 1px solid rgba(225, 29, 72, 0.35);
+    border-radius: var(--radius-md);
+    animation: fadeIn 0.2s ease-out;
+
+    .banner-text {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13.5px;
+      color: var(--fg);
+
+      app-icon {
+        color: var(--accent);
+      }
+
+      strong {
+        color: var(--accent);
+        font-weight: 700;
+      }
+    }
+
+    .btn-clear-author {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      font-size: 12.5px;
+      font-weight: 600;
+      border-radius: var(--radius-full);
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border);
+      color: var(--fg);
+      cursor: pointer;
+      transition: all 0.2s ease;
+
+      &:hover {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+        transform: translateY(-1px);
+      }
+    }
+  }
 }
 
 .filter-title-row {
@@ -2737,6 +2806,220 @@ small {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 24px 16px;
+}
+
+/* ==========================================================================
+   DEDICATED AUTHOR PROFILE & SEARCH PAGE
+   ========================================================================== */
+.author-page-container {
+  max-width: var(--max-w);
+  margin: 0 auto;
+  padding-bottom: 40px;
+}
+
+.author-hero {
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 28px;
+  background: radial-gradient(circle at top right, rgba(225, 29, 72, 0.12), transparent 70%), var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+.author-hero-content {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.author-avatar-badge {
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(135deg, var(--accent) 0%, #ec4899 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 6px 16px rgba(225, 29, 72, 0.35);
+
+  .author-avatar-letter {
+    font-size: 32px;
+    font-weight: 800;
+    color: #fff;
+    line-height: 1;
+  }
+}
+
+.author-details {
+  flex: 1;
+
+  .author-title-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+
+    h1 {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--fg);
+      margin: 0;
+    }
+
+    .author-count-pill {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent);
+      background: rgba(225, 29, 72, 0.15);
+      border: 1px solid rgba(225, 29, 72, 0.3);
+      padding: 3px 10px;
+      border-radius: var(--radius-full);
+    }
+  }
+
+  .author-subtitle {
+    font-size: 13.5px;
+    color: var(--muted);
+    margin-bottom: 16px;
+
+    strong {
+      color: var(--fg);
+    }
+  }
+
+  .author-search-bar {
+    display: flex;
+    gap: 10px;
+    max-width: 600px;
+
+    .author-search-input-field {
+      flex: 1;
+      position: relative;
+      display: flex;
+      align-items: center;
+
+      .field-icon {
+        position: absolute;
+        left: 14px;
+        color: var(--muted);
+        pointer-events: none;
+      }
+
+      input {
+        width: 100%;
+        padding-left: 42px;
+        padding-right: 36px;
+        height: 42px;
+        border-radius: var(--radius-full);
+        font-size: 13.5px;
+      }
+
+      .btn-clear-author-input {
+        position: absolute;
+        right: 12px;
+        font-size: 18px;
+        color: var(--muted);
+      }
+    }
+
+    .btn-author-search {
+      height: 42px;
+      border-radius: var(--radius-full);
+      padding: 0 18px;
+      white-space: nowrap;
+    }
+  }
+}
+
+.author-results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+
+  .results-heading {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+
+    h2 {
+      margin: 0;
+    }
+  }
+
+  .author-sort-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--muted);
+
+    select {
+      height: 36px;
+      font-size: 13px;
+      border-radius: var(--radius-md);
+      padding: 0 12px;
+    }
+  }
+}
+
+.author-manga-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 24px 16px;
+}
+
+@media (max-width: 1024px) {
+  .author-manga-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .author-hero {
+    padding: 16px;
+  }
+
+  .author-hero-content {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 14px;
+  }
+
+  .author-details {
+    width: 100%;
+
+    .author-title-row {
+      justify-content: center;
+    }
+
+    .author-search-bar {
+      flex-direction: column;
+      width: 100%;
+
+      .btn-author-search {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+  }
+
+  .author-manga-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .author-manga-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 8px;
+  }
 }
 
 /* ==========================================================================

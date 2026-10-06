@@ -347,12 +347,24 @@ app.MapGet("/api/catalog/home", async (int? page, int? pageSize, Catalog catalog
 app.MapGet("/api/catalog/featured", async (int? limit, Catalog catalog) => {
     return Results.Ok(await catalog.Featured(Math.Clamp(limit ?? 20, 1, 50)));
 });
-app.MapGet("/api/catalog/search", async (string? page, string? pageSize, string? q, string? genre, string? status, string? country, string? demographic, string? language, string? sort, string? year, Catalog catalog) => {
+app.MapGet("/api/catalog/search", async (string? page, string? pageSize, string? q, string? author, string? genre, string? status, string? country, string? demographic, string? language, string? sort, string? year, Catalog catalog) => {
     var p = int.TryParse(page, out var pi) ? Math.Max(1, pi) : 1;
     var size = int.TryParse(pageSize, out var si) ? Math.Clamp(si, 1, 28) : 24;
     var y = int.TryParse(year, out var yi) && yi is >= 1900 and <= 2100 ? yi : (int?)null;
-    if (p < 1 || (long)p * size > 10000 || q?.Length > 250) return Results.BadRequest(new { message = "Bộ lọc hoặc trang không hợp lệ." });
-    return Results.Ok(await catalog.Search(p, size, q, genre, status, country, demographic, language, sort, y));
+    if (p < 1 || (long)p * size > 10000 || q?.Length > 250 || author?.Length > 250) return Results.BadRequest(new { message = "Bộ lọc hoặc trang không hợp lệ." });
+    return Results.Ok(await catalog.Search(p, size, q, author, genre, status, country, demographic, language, sort, y));
+});
+app.MapGet("/api/catalog/author/{name}", async (string name, string? page, string? pageSize, string? sort, Catalog catalog) => {
+    var p = int.TryParse(page, out var pi) ? Math.Max(1, pi) : 1;
+    var size = int.TryParse(pageSize, out var si) ? Math.Clamp(si, 1, 28) : 24;
+    if (string.IsNullOrWhiteSpace(name) || name.Length > 250) return Results.BadRequest(new { message = "Tên tác giả không hợp lệ." });
+    return Results.Ok(await catalog.GetAuthorManga(name.Trim(), p, size, sort));
+});
+app.MapGet("/api/catalog/author", async (string? name, string? page, string? pageSize, string? sort, Catalog catalog) => {
+    if (string.IsNullOrWhiteSpace(name)) return Results.Ok(new CatalogPage([], 0, 1, 24));
+    var p = int.TryParse(page, out var pi) ? Math.Max(1, pi) : 1;
+    var size = int.TryParse(pageSize, out var si) ? Math.Clamp(si, 1, 28) : 24;
+    return Results.Ok(await catalog.GetAuthorManga(name.Trim(), p, size, sort));
 });
 app.MapGet("/api/catalog/tags", (Catalog catalog) => catalog.Tags());
 app.MapGet("/api/catalog/{id:guid}", async (Guid id, Catalog catalog, AppDb db) => { var m = await catalog.Detail(id); await Remember(db, m); return m; });

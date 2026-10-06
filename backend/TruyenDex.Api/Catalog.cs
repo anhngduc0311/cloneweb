@@ -140,7 +140,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             Id = id,
             Title = displayTitle,
             AlternativeTitle = altTitleDisplay,
-            Author = string.Join(" / ", rel.Where(x => S(x?["type"]) == "author").Select(x => S(x?["attributes"]?["name"]))),
+            Author = string.Join(" / ", rel.Where(x => S(x?["type"]) == "author" || S(x?["type"]) == "artist").Select(x => S(x?["attributes"]?["name"])).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase)),
             Cover = file.Length > 0 ? "https://services.f-ck.me/v1/image/" + Convert.ToBase64String(Encoding.UTF8.GetBytes(coverUrl)).Replace('+', '-').Replace('/', '_') : "/cover-placeholder.svg",
             Description = Localized(a["description"]),
             Status = S(a["status"]),
@@ -370,7 +370,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             if (rows != null && rows.Count > 0)
             {
                 var ids = rows.Select(x => S(x?["uuid"])).Where(x => !string.IsNullOrEmpty(x)).ToArray();
-                var response = await Get("/manga?limit=100&includes[]=cover_art&includes[]=author&" + string.Join("&", ids.Select(x => "ids[]=" + x)));
+                var response = await Get("/manga?limit=100&includes[]=cover_art&includes[]=author&includes[]=artist&" + string.Join("&", ids.Select(x => "ids[]=" + x)));
                 var map = response["data"]!.AsArray().Select(x => Map(x!, isThumbnail: true)).ToDictionary(x => x.Id.ToString());
                 foreach (var row in rows) {
                     if (!map.TryGetValue(S(row?["uuid"]), out var m)) continue;
@@ -487,7 +487,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         List<MangaCard> mdItems = [];
         try
         {
-            var path = $"/manga?limit={size}&includes[]=cover_art&includes[]=author&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&order[latestUploadedChapter]=desc&originalLanguage[]=ko&originalLanguage[]=zh&availableTranslatedLanguage[]=vi";
+            var path = $"/manga?limit={size}&includes[]=cover_art&includes[]=author&includes[]=artist&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&order[latestUploadedChapter]=desc&originalLanguage[]=ko&originalLanguage[]=zh&availableTranslatedLanguage[]=vi";
             var result = await Get(path);
             var rawItems = result["data"]!.AsArray().Select(x => Map(x!, isThumbnail: true)).ToList();
             await Stats(rawItems);
@@ -572,9 +572,9 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         return 10;
     }
 
-    public async Task<CatalogPage> Search(int page, int size, string? q, string? genre, string? status, string? country, string? demographic, string? language, string? sort, int? year)
+    public async Task<CatalogPage> Search(int page, int size, string? q, string? author = null, string? genre = null, string? status = null, string? country = null, string? demographic = null, string? language = null, string? sort = null, int? year = null)
     {
-        var cacheKey = $"catalog:search:v11:{page}:{size}:{q}:{genre}:{status}:{country}:{demographic}:{language}:{sort}:{year}";
+        var cacheKey = $"catalog:search:v14:{page}:{size}:{q}:{author}:{genre}:{status}:{country}:{demographic}:{language}:{sort}:{year}";
         var cachedSearch = await CacheGet<CatalogPage>(cacheKey);
         if (cachedSearch != null)
         {
@@ -590,55 +590,155 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
         var order = sort switch { "rating" => "rating", "hot" => "followedCount", "title" => "title", "new" => "createdAt", "chapters" => "followedCount", _ => "latestUploadedChapter" };
         var fetchLimit = sort == "chapters" ? Math.Clamp(size * 2, 24, 60) : size;
-        var path = $"/manga?limit={fetchLimit}&offset={(page - 1) * size}&includes[]=cover_art&includes[]=author&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&order[{order}]={(order == "title" ? "asc" : "desc")}";
-        if (!string.IsNullOrWhiteSpace(q)) path += "&title=" + E(q.Trim());
-        if (Guid.TryParse(genre, out var tag)) path += "&includedTags[]=" + tag;
-        if (new[] { "ongoing", "completed", "hiatus", "cancelled" }.Contains(status)) path += "&status[]=" + status;
+        var basePath = $"/manga?limit={fetchLimit}&offset={(page - 1) * size}&includes[]=cover_art&includes[]=author&includes[]=artist&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&order[{order}]={(order == "title" ? "asc" : "desc")}";
+        if (!string.IsNullOrWhiteSpace(q)) basePath += "&title=" + E(q.Trim());
+
+        if (Guid.TryParse(genre, out var tag)) basePath += "&includedTags[]=" + tag;
+        if (new[] { "ongoing", "completed", "hiatus", "cancelled" }.Contains(status)) basePath += "&status[]=" + status;
         if (!string.IsNullOrWhiteSpace(country))
         {
             var countries = country.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             foreach (var c in countries)
             {
                 if (new[] { "ja", "ko", "zh", "en" }.Contains(c))
-                    path += "&originalLanguage[]=" + c;
+                    basePath += "&originalLanguage[]=" + c;
                 else if (c.Equals("manhwa", StringComparison.OrdinalIgnoreCase))
-                    path += "&originalLanguage[]=ko";
+                    basePath += "&originalLanguage[]=ko";
                 else if (c.Equals("manhua", StringComparison.OrdinalIgnoreCase))
-                    path += "&originalLanguage[]=zh";
+                    basePath += "&originalLanguage[]=zh";
             }
         }
-        if (new[] { "shounen", "shoujo", "josei", "seinen" }.Contains(demographic)) path += "&publicationDemographic[]=" + demographic;
-        path += "&availableTranslatedLanguage[]=" + (language == "en" ? "en" : "vi");
-        if (year is >= 1900 and <= 2100) path += "&year=" + year;
+        if (new[] { "shounen", "shoujo", "josei", "seinen" }.Contains(demographic)) basePath += "&publicationDemographic[]=" + demographic;
+        if (string.IsNullOrWhiteSpace(author))
+        {
+            basePath += "&availableTranslatedLanguage[]=" + (language == "en" ? "en" : "vi");
+        }
+        if (year is >= 1900 and <= 2100) basePath += "&year=" + year;
+
+        // If author is specified, resolve author IDs on MangaDex
+        List<string> authorIds = new();
+        if (!string.IsNullOrWhiteSpace(author))
+        {
+            var authorQuery = author.Trim();
+            try
+            {
+                var authorRes = await Get($"/author?name={E(authorQuery)}&limit=100");
+                if (authorRes["data"]?.AsArray() is { } aArr && aArr.Count > 0)
+                {
+                    var allAuthors = aArr
+                        .Select(x => new {
+                            Id = S(x?["id"]),
+                            Name = S(x?["attributes"]?["name"]).Trim()
+                        })
+                        .Where(x => !string.IsNullOrEmpty(x.Id) && !string.IsNullOrEmpty(x.Name))
+                        .ToList();
+
+                    var exactMatches = allAuthors
+                        .Where(x => x.Name.Equals(authorQuery, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+
+                    if (exactMatches.Count > 0)
+                    {
+                        authorIds = exactMatches.Select(x => x.Id).ToList();
+                    }
+                    else
+                    {
+                        var prefixMatches = allAuthors
+                            .Where(x => x.Name.StartsWith(authorQuery, StringComparison.OrdinalIgnoreCase))
+                            .Take(5)
+                            .ToList();
+
+                        if (prefixMatches.Count > 0)
+                        {
+                            authorIds = prefixMatches.Select(x => x.Id).ToList();
+                        }
+                        else
+                        {
+                            authorIds = allAuthors
+                                .Where(x => x.Name.IndexOf(authorQuery, StringComparison.OrdinalIgnoreCase) >= 0)
+                                .Take(5)
+                                .Select(x => x.Id)
+                                .ToList();
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
 
         var items = new List<MangaCard>();
         int total = 0;
 
-        // Run MangaDex search and TruyenGG search in parallel
+        // Run MangaDex search
         var mdTask = Task.Run(async () =>
         {
             try
             {
-                var result = await Get(path);
                 var rawItems = new List<MangaCard>();
-                if (result["data"]?.AsArray() is { } dataArr)
+                int mdTotal = 0;
+
+                if (authorIds.Count > 0)
                 {
-                    foreach (var x in dataArr)
+                    // Query authors[] and artists[] in parallel so creators with either role match
+                    var authorPath = basePath + "&" + string.Join("&", authorIds.Select(id => $"authors[]={id}"));
+                    var artistPath = basePath + "&" + string.Join("&", authorIds.Select(id => $"artists[]={id}"));
+
+                    var aTask = Get(authorPath);
+                    var artTask = Get(artistPath);
+                    await Task.WhenAll(aTask, artTask);
+
+                    var aRes = await aTask;
+                    var artRes = await artTask;
+
+                    var seenIds = new HashSet<Guid>();
+                    foreach (var res in new[] { aRes, artRes })
                     {
-                        if (x == null) continue;
-                        try { rawItems.Add(Map(x, isThumbnail: true)); } catch { }
+                        if (res["data"]?.AsArray() is { } dataArr)
+                        {
+                            foreach (var x in dataArr)
+                            {
+                                if (x == null) continue;
+                                try {
+                                    var card = Map(x, isThumbnail: true);
+                                    if (seenIds.Add(card.Id))
+                                    {
+                                        rawItems.Add(card);
+                                    }
+                                } catch { }
+                            }
+                        }
+                        mdTotal = Math.Max(mdTotal, Math.Min((int?)res["total"] ?? 0, 10000));
                     }
                 }
+                else
+                {
+                    var finalPath = basePath;
+                    if (!string.IsNullOrWhiteSpace(author) && string.IsNullOrWhiteSpace(q))
+                    {
+                        finalPath += "&title=" + E(author.Trim());
+                    }
+
+                    var result = await Get(finalPath);
+                    if (result["data"]?.AsArray() is { } dataArr)
+                    {
+                        foreach (var x in dataArr)
+                        {
+                            if (x == null) continue;
+                            try { rawItems.Add(Map(x, isThumbnail: true)); } catch { }
+                        }
+                    }
+                    mdTotal = Math.Min((int?)result["total"] ?? 0, 10000);
+                }
+
                 var statsTask = Stats(rawItems);
                 var chapsTask = PopulateMangaDexChapters(rawItems, language);
                 try { await Task.WhenAll(statsTask, chapsTask); } catch { }
-                var mdTotal = Math.Min((int?)result["total"] ?? 0, 10000);
                 return (rawItems, mdTotal);
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[Catalog.Search] MangaDex upstream warning: {ex.Message}");
-                if (ex is UpstreamException && string.IsNullOrWhiteSpace(q))
+                if (ex is UpstreamException && string.IsNullOrWhiteSpace(q) && string.IsNullOrWhiteSpace(author))
                 {
                     throw;
                 }
@@ -646,8 +746,9 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             }
         });
 
-        var ggTask = !string.IsNullOrWhiteSpace(q)
-            ? truyengg.Search(q, page)
+        var searchKeyword = !string.IsNullOrWhiteSpace(q) ? q.Trim() : (!string.IsNullOrWhiteSpace(author) ? author.Trim() : null);
+        var ggTask = !string.IsNullOrWhiteSpace(searchKeyword)
+            ? truyengg.Search(searchKeyword, page)
             : Task.FromResult(new List<MangaCard>());
 
         await Task.WhenAll(mdTask, ggTask);
@@ -656,42 +757,54 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         var ggResults = await ggTask;
         total = mdTotal;
 
-        // 1. Add TruyenGG results first
-        foreach (var gg in ggResults)
+        // 1. Add MangaDex results first (exact author/tag matches)
+        foreach (var m in rawItems)
         {
-            items.Add(gg);
+            items.Add(m);
         }
 
-        // 2. Add MangaDex results, merging/deduplicating against TruyenGG
-        foreach (var m in rawItems)
+        // 2. Add TruyenGG results, merging or appending
+        var authorNormForFilter = !string.IsNullOrWhiteSpace(author) ? author.Trim().ToLowerInvariant() : null;
+        foreach (var gg in ggResults)
         {
             bool isDuplicate = false;
             for (int i = 0; i < items.Count; i++)
             {
                 var existing = items[i];
-                if (TruyenGg.IsSameManga(existing.Title, existing.AlternativeTitle, m.Title, m.AlternativeTitle))
+                if (TruyenGg.IsSameManga(existing.Title, existing.AlternativeTitle, gg.Title, gg.AlternativeTitle))
                 {
                     isDuplicate = true;
-                    if (ShouldPreferCandidate(m, existing))
+                    if (ShouldPreferCandidate(gg, existing))
                     {
-                        items[i] = m;
+                        items[i] = gg;
                     }
                     break;
                 }
             }
             if (!isDuplicate)
             {
-                items.Add(m);
+                if (authorNormForFilter != null)
+                {
+                    if (rawItems.Count == 0 || (!string.IsNullOrWhiteSpace(gg.Author) && gg.Author.ToLowerInvariant().Contains(authorNormForFilter)))
+                    {
+                        items.Add(gg);
+                    }
+                }
+                else
+                {
+                    items.Add(gg);
+                }
             }
         }
 
         // Fallback: If both external sources returned 0 items and meili is available, search local meili index
-        if (items.Count == 0 && !string.IsNullOrWhiteSpace(q) && meili != null)
+        if (items.Count == 0 && (!string.IsNullOrWhiteSpace(q) || !string.IsNullOrWhiteSpace(author)) && meili != null)
         {
             try
             {
+                var queryTerm = !string.IsNullOrWhiteSpace(q) ? q.Trim() : author!.Trim();
                 var index = meili.Index("mangas");
-                var meiliHits = await index.SearchAsync<MangaCard>(q.Trim(), new SearchQuery { Limit = size, Offset = (page - 1) * size });
+                var meiliHits = await index.SearchAsync<MangaCard>(queryTerm, new SearchQuery { Limit = size, Offset = (page - 1) * size });
                 if (meiliHits?.Hits?.Any() == true)
                 {
                     items.AddRange(meiliHits.Hits);
@@ -705,6 +818,15 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         if (sort == "chapters" && items.Count > 1)
         {
             items = items.OrderByDescending(m => GetChapterCount(m)).ToList();
+        }
+        else if (!string.IsNullOrWhiteSpace(author) && items.Count > 1)
+        {
+            var authorNorm = author.Trim().ToLowerInvariant();
+            items = items
+                .OrderByDescending(m => m.Author.ToLowerInvariant().Contains(authorNorm) ? 2 : 0)
+                .ThenByDescending(m => m.Follows)
+                .ThenByDescending(m => m.Rating)
+                .ToList();
         }
         else if (!string.IsNullOrWhiteSpace(q) && items.Count > 1)
         {
@@ -739,6 +861,194 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         }
 
         return new CatalogPage(items, total, page, size);
+    }
+
+    public async Task<CatalogPage> GetAuthorManga(string name, int page, int size, string? sort = null)
+    {
+        var cacheKey = $"catalog:author_page:v5:{page}:{size}:{name}:{sort}";
+        var cached = await CacheGet<CatalogPage>(cacheKey);
+        if (cached != null && cached.Items.Count > 0) return cached;
+
+        var authorQuery = name.Trim();
+        var order = sort switch { "rating" => "rating", "hot" => "followedCount", "title" => "title", "new" => "createdAt", _ => "latestUploadedChapter" };
+        var basePath = $"/manga?limit={size}&offset={(page - 1) * size}&includes[]=cover_art&includes[]=author&includes[]=artist&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&order[{order}]={(order == "title" ? "asc" : "desc")}";
+
+        List<string> authorIds = new();
+        List<string> directMangaIds = new();
+        try
+        {
+            var authorRes = await Get($"/author?name={E(authorQuery)}&limit=100");
+            if (authorRes["data"]?.AsArray() is { } aArr && aArr.Count > 0)
+            {
+                var allAuthors = aArr
+                    .Select(x => new {
+                        Id = S(x?["id"]),
+                        Name = S(x?["attributes"]?["name"]),
+                        MangaRelIds = x?["relationships"]?.AsArray()
+                            .Where(r => S(r?["type"]) == "manga")
+                            .Select(r => S(r?["id"]))
+                            .Where(id => !string.IsNullOrEmpty(id))
+                            .ToList() ?? new List<string>()
+                    })
+                    .Where(x => !string.IsNullOrEmpty(x.Id) && !string.IsNullOrEmpty(x.Name))
+                    .ToList();
+
+                var exactMatches = allAuthors
+                    .Where(x => x.Name.Equals(authorQuery, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                var selectedAuthors = exactMatches.Count > 0
+                    ? exactMatches
+                    : allAuthors
+                        .Where(x => x.Name.StartsWith(authorQuery, StringComparison.OrdinalIgnoreCase))
+                        .Take(3)
+                        .ToList();
+
+                if (selectedAuthors.Count == 0)
+                {
+                    selectedAuthors = allAuthors
+                        .Where(x => x.Name.IndexOf(authorQuery, StringComparison.OrdinalIgnoreCase) >= 0)
+                        .Take(3)
+                        .ToList();
+                }
+
+                authorIds = selectedAuthors.Select(x => x.Id).Distinct().ToList();
+                directMangaIds = selectedAuthors.SelectMany(x => x.MangaRelIds).Distinct().ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[GetAuthorManga] Author lookup warning: {ex.Message}");
+        }
+
+        var items = new List<MangaCard>();
+        int total = 0;
+        var seenIds = new HashSet<Guid>();
+        var rawItems = new List<MangaCard>();
+
+        // 1. Fetch by direct manga IDs from author relationships (100% reliable)
+        if (directMangaIds.Count > 0)
+        {
+            try
+            {
+                var pagedIds = directMangaIds.Skip((page - 1) * size).Take(size).ToList();
+                if (pagedIds.Count > 0)
+                {
+                    var idPath = $"/manga?limit={size}&includes[]=cover_art&includes[]=author&includes[]=artist&" + string.Join("&", pagedIds.Select(id => $"ids[]={id}"));
+                    var idRes = await Get(idPath);
+                    if (idRes["data"]?.AsArray() is { } dataArr)
+                    {
+                        foreach (var x in dataArr)
+                        {
+                            if (x == null) continue;
+                            try {
+                                var card = Map(x, isThumbnail: true);
+                                if (seenIds.Add(card.Id)) rawItems.Add(card);
+                            } catch { }
+                        }
+                    }
+                }
+                total = Math.Max(total, directMangaIds.Count);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[GetAuthorManga] Direct manga ID fetch warning: {ex.Message}");
+            }
+        }
+
+        // 2. If direct relationships yielded no items, fetch by authors[] and artists[] in parallel
+        if (authorIds.Count > 0 && rawItems.Count == 0)
+        {
+            var authorPath = basePath + "&" + string.Join("&", authorIds.Select(id => $"authors[]={id}"));
+            var artistPath = basePath + "&" + string.Join("&", authorIds.Select(id => $"artists[]={id}"));
+
+            try
+            {
+                var aTask = Get(authorPath);
+                var artTask = Get(artistPath);
+                await Task.WhenAll(aTask, artTask);
+
+                var aRes = await aTask;
+                var artRes = await artTask;
+
+                foreach (var res in new[] { aRes, artRes })
+                {
+                    if (res["data"]?.AsArray() is { } resArr)
+                    {
+                        foreach (var x in resArr)
+                        {
+                            if (x == null) continue;
+                            try {
+                                var card = Map(x, isThumbnail: true);
+                                if (seenIds.Add(card.Id)) rawItems.Add(card);
+                            } catch { }
+                        }
+                        total = Math.Max(total, Math.Min((int?)res["total"] ?? 0, 10000));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[GetAuthorManga] Author/Artist query warning: {ex.Message}");
+            }
+        }
+
+        // 3. Fallback: text search on title if no author was found
+        if (rawItems.Count == 0 && authorIds.Count == 0 && directMangaIds.Count == 0)
+        {
+            try
+            {
+                var finalPath = basePath + "&title=" + E(authorQuery);
+                var result = await Get(finalPath);
+                if (result["data"]?.AsArray() is { } dataArr)
+                {
+                    foreach (var x in dataArr)
+                    {
+                        if (x == null) continue;
+                        try {
+                            var card = Map(x, isThumbnail: true);
+                            if (seenIds.Add(card.Id)) rawItems.Add(card);
+                        } catch { }
+                    }
+                }
+                total = Math.Max(total, Math.Min((int?)result["total"] ?? 0, 10000));
+            }
+            catch { }
+        }
+
+        if (rawItems.Count > 0)
+        {
+            var statsTask = Stats(rawItems);
+            var chapsTask = PopulateMangaDexChapters(rawItems, "vi");
+            try { await Task.WhenAll(statsTask, chapsTask); } catch { }
+        }
+
+        items = rawItems;
+
+        // Sort items by relevance to author name
+        if (items.Count > 1)
+        {
+            var authorNorm = authorQuery.ToLowerInvariant();
+            items = items
+                .OrderByDescending(m => m.Author.ToLowerInvariant().Contains(authorNorm) ? 2 : 0)
+                .ThenByDescending(m => m.Follows)
+                .ThenByDescending(m => m.Rating)
+                .ToList();
+        }
+
+        if (total < items.Count) total = items.Count;
+
+        if (items.Count > 0)
+        {
+            _ = Task.Run(async () => {
+                try { await EnsureTopChapters(items.Take(8).ToList(), 3); } catch { }
+            });
+            var res = new CatalogPage(items, total, page, size);
+            await CacheSet(cacheKey, res, TimeSpan.FromMinutes(10));
+            return res;
+        }
+
+        return new CatalogPage([], 0, page, size);
     }
 
     private async Task PopulateMangaDexChapters(List<MangaCard> items, string? language)
@@ -809,7 +1119,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             return ggManga;
         }
 
-        var data = await Get($"/manga/{id}?includes[]=cover_art&includes[]=author");
+        var data = await Get($"/manga/{id}?includes[]=cover_art&includes[]=author&includes[]=artist");
         var m = Map(data["data"]!, isThumbnail: false);
         await Stats([m]);
         await CacheSet(cacheKey, m, TimeSpan.FromMinutes(20));

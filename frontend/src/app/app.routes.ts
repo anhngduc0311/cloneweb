@@ -4,6 +4,8 @@ import { adminGuard } from './admin.guard';
 export const routes: Routes = [
   {path:'',loadComponent:()=>import('./home').then(m=>m.Home),title:'AkaTruyen - Đọc Truyện Tranh Online Miễn Phí Mới Nhất | akatruyen.com'},
   {path:'tim-truyen-nang-cao',loadComponent:()=>import('./search').then(m=>m.Search),title:'Tìm truyện nâng cao · AkaTruyen'},
+  {path:'tac-gia/:name',loadComponent:()=>import('./author').then(m=>m.AuthorComponent),title:'Tác giả · AkaTruyen'},
+  {path:'tac-gia',loadComponent:()=>import('./author').then(m=>m.AuthorComponent),title:'Tác giả · AkaTruyen'},
   {path:'truyen-tranh/:id',loadComponent:()=>import('./detail').then(m=>m.Detail),title:'Chi tiết truyện · AkaTruyen'},
   {path:'chuong/:id',loadComponent:()=>import('./reader').then(m=>m.Reader),title:'Đọc truyện online · AkaTruyen'},
   {path:'theo-doi',loadComponent:()=>import('./account').then(m=>m.Library),title:'Truyện theo dõi · AkaTruyen'},

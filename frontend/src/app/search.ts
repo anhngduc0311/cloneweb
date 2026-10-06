@@ -15,6 +15,19 @@ import { Icon, MangaCardComponent, Pagination } from './ui';
   </div>
 
   <form class="filter-panel glass-panel" (ngSubmit)="submit()">
+    @if(form.author){
+      <div class="active-author-banner">
+        <div class="banner-text">
+          <app-icon name="user"/>
+          <span>Đang lọc theo tác giả: <strong>{{form.author}}</strong></span>
+        </div>
+        <button type="button" class="btn-clear-author" (click)="clearAuthor()" aria-label="Xóa bộ lọc tác giả">
+          <app-icon name="close"/>
+          <span>Xóa lọc tác giả</span>
+        </button>
+      </div>
+    }
+
     <div class="filter-title-row">
       <div class="search-input-field">
         <app-icon name="search" class="field-icon"/>
@@ -167,6 +180,7 @@ export class Search {
 
   defaults = () => ({
     q: '',
+    author: '',
     genre: '',
     status: '',
     country: '',
@@ -200,6 +214,11 @@ export class Search {
       qp['page'] = page;
     }
     return qp;
+  }
+
+  clearAuthor() {
+    this.form.author = '';
+    this.submit();
   }
 
   submit() {

@@ -76,7 +76,15 @@ import { Sidebar } from './sidebar';
 
             <dl class="meta-grid">
               <dt>Tác giả</dt>
-              <dd>{{m.author || 'Đang cập nhật'}}</dd>
+              <dd>
+                @if(m.author && m.author !== 'Đang cập nhật'){
+                  @for(a of getAuthors(m.author); track a; let last = $last){
+                    <a class="author-link" [routerLink]="['/tac-gia', a]" title="Xem trang tác giả {{a}}">{{a}}</a>@if(!last){<span class="author-sep"> / </span>}
+                  }
+                }@else{
+                  <span class="muted">Đang cập nhật</span>
+                }
+              </dd>
               <dt>Tình trạng</dt>
               <dd>
                 <span class="status-indicator" [class.ongoing]="m.status === 'ongoing'" [class.completed]="m.status === 'completed'">
@@ -471,6 +479,14 @@ export class Detail {
     } finally {
       this.reading.set(false);
     }
+  }
+
+  getAuthors(authorStr?: string): string[] {
+    if (!authorStr || authorStr === 'Đang cập nhật') return [];
+    return authorStr
+      .split(/[\/,]/)
+      .map(a => a.trim())
+      .filter(a => a.length > 0 && a !== 'Đang cập nhật');
   }
 
   async findGenre(name: string) {
