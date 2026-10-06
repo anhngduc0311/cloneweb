@@ -7,7 +7,7 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 ENV_FILE="$ROOT_DIR/.env.production"
 COMPOSE_FILE="$ROOT_DIR/compose.production.yaml"
-INSTALL_DOCKER=false
+INSTALL_DOCKER=true
 CHECK_ONLY=false
 SKIP_SWAP=false
 
