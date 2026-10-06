@@ -4579,7 +4579,7 @@ small {
   .reader-header {
     width: 100% !important;
     max-width: 100% !important;
-    overflow: hidden;
+    overflow: visible;
   }
 
   .reader-header-inner {
@@ -4592,7 +4592,7 @@ small {
     width: 100% !important;
     max-width: 100% !important;
     box-sizing: border-box;
-    overflow: hidden;
+    overflow: visible;
 
     .reader-title-box {
       flex: 0 0 auto;
@@ -4748,10 +4748,20 @@ small {
 
           .as-speed-menu {
             position: absolute;
-            top: calc(100% + 6px);
+            top: calc(100% + 8px);
             right: 0;
-            min-width: 130px;
+            min-width: 140px;
             z-index: 1100;
+            background: rgba(15, 21, 35, 0.98);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+            border-radius: var(--radius-md);
+
+            .menu-item-btn {
+              padding: 9px 12px;
+              font-size: 12px;
+              cursor: pointer;
+            }
           }
         }
       }
