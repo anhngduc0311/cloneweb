@@ -86,7 +86,6 @@ export class Icon {
       <span class="age-label">18+</span>
     }
     <span class="cover-rating"><app-icon name="star"/> {{manga().rating.toFixed(1)}}</span>
-    @if(manga().chapters.length){<span class="cover-chapter">{{manga().chapters[0].title}}</span>}
     <span class="cover-read" aria-hidden="true"><app-icon name="book"/></span>
   </a>
   <div class="manga-card-info">

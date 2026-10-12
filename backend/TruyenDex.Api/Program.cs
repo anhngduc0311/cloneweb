@@ -471,13 +471,52 @@ app.MapGet("/api/comments", async (Guid? mangaId, int? page, AppDb db) => {
     return Results.Ok(new { items, total, page = p, pageSize = 20 });
 });
 app.MapPost("/api/catalog/{id:guid}/comments", async (Guid id, CommentRequest req, ClaimsPrincipal user, AppDb db, Catalog catalog) => {
-    var body = (req.Body ?? "").Trim(); if (body.Length is < 1 or > 2000) return Results.BadRequest(new { message = "Bình luận từ 1–2.000 ký tự." });
+    var body = (req.Body ?? "").Trim();
+    if (body.Length is < 1 or > 2000) return Results.BadRequest(new { message = "Bình luận từ 1–2.000 ký tự." });
+    
+    var currentUserId = UserId(user);
+    var isAdmin = user.IsInRole("admin") || user.IsInRole("superadmin");
+
+    if (!isAdmin)
+    {
+        // 1. Kiểm tra thời gian chờ giữa 2 bình luận liên tiếp (cooldown 15 giây)
+        var lastComment = await db.Comments.AsNoTracking()
+            .Where(c => c.UserId == currentUserId)
+            .OrderByDescending(c => c.CreatedAt)
+            .Select(c => new { c.CreatedAt, c.Body })
+            .FirstOrDefaultAsync();
+
+        if (lastComment != null)
+        {
+            var elapsed = DateTime.UtcNow - lastComment.CreatedAt;
+            var cooldownSeconds = 15;
+            if (elapsed.TotalSeconds < cooldownSeconds)
+            {
+                var waitLeft = (int)Math.Ceiling(cooldownSeconds - elapsed.TotalSeconds);
+                return Results.Json(new { message = $"Vui lòng đợi {waitLeft} giây trước khi gửi bình luận tiếp theo." }, statusCode: 429);
+            }
+
+            // 2. Chặn spam nội dung trùng lặp trong vòng 5 phút
+            if (elapsed.TotalMinutes < 5 && string.Equals(lastComment.Body.Trim(), body, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.BadRequest(new { message = "Nội dung bình luận bị trùng lặp. Vui lòng không spam nội dung giống nhau." });
+            }
+        }
+
+        // 3. Giới hạn tối đa 4 bình luận trong vòng 1 phút
+        var oneMinuteAgo = DateTime.UtcNow.AddMinutes(-1);
+        var recentCount = await db.Comments.CountAsync(c => c.UserId == currentUserId && c.CreatedAt >= oneMinuteAgo);
+        if (recentCount >= 4)
+        {
+            return Results.Json(new { message = "Bạn đang gửi bình luận quá nhanh. Vui lòng thử lại sau 1 phút." }, statusCode: 429);
+        }
+    }
+
     var lowerBody = body.ToLowerInvariant();
     var bannedWords = await db.BannedKeywords.Select(k => k.Keyword).ToListAsync();
     bool flagged = bannedWords.Any(w => !string.IsNullOrWhiteSpace(w) && lowerBody.Contains(w));
     var detail = await catalog.Detail(id);
     await Remember(db, detail);
-    var currentUserId = UserId(user);
     var currentUserName = user.FindFirstValue(ClaimTypes.Name) ?? "Thành viên";
     if (string.IsNullOrWhiteSpace(currentUserName) || currentUserName == "Thành viên") {
         var u = await db.Users.FindAsync(currentUserId);

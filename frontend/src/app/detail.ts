@@ -225,8 +225,8 @@ import { Sidebar } from './sidebar';
 
             <div class="comment-submit">
               <small class="muted">{{body.length}} / 2.000 ký tự</small>
-              <button class="primary" [disabled]="posting() || !body.trim()">
-                {{posting() ? 'Đang gửi…' : 'Gửi bình luận'}}
+              <button class="primary" [disabled]="posting() || cooldown() > 0 || !body.trim()">
+                {{posting() ? 'Đang gửi…' : (cooldown() > 0 ? ('Đợi ' + cooldown() + 's…') : 'Gửi bình luận')}}
               </button>
             </div>
           </form>
@@ -308,10 +308,10 @@ import { Sidebar } from './sidebar';
                       <button
                         type="button"
                         class="fb-btn-send"
-                        [disabled]="inlinePosting() || !inlineReplyBody.trim()"
+                        [disabled]="inlinePosting() || cooldown() > 0 || !inlineReplyBody.trim()"
                         (click)="sendInlineReply(root)"
                       >
-                        {{inlinePosting() ? '…' : 'Gửi'}}
+                        {{inlinePosting() ? '…' : (cooldown() > 0 ? (cooldown() + 's') : 'Gửi')}}
                       </button>
                       <button
                         type="button"
@@ -371,6 +371,8 @@ export class Detail {
   replyTargetComment = signal<Comment | null>(null);
   inlineReplyBody = '';
   inlinePosting = signal(false);
+  cooldown = signal(0);
+  private cooldownTimer?: ReturnType<typeof setInterval>;
 
   threadComments = computed(() => {
     const items = this.comments();
@@ -694,7 +696,24 @@ export class Detail {
     this.inlineReplyBody = '';
   }
 
+  startCooldown(seconds = 15) {
+    this.cooldown.set(seconds);
+    clearInterval(this.cooldownTimer);
+    this.cooldownTimer = setInterval(() => {
+      if (this.cooldown() <= 1) {
+        this.cooldown.set(0);
+        clearInterval(this.cooldownTimer);
+      } else {
+        this.cooldown.update(s => s - 1);
+      }
+    }, 1000);
+  }
+
   async sendInlineReply(root: Comment) {
+    if (this.cooldown() > 0) {
+      this.store.notify(`Vui lòng đợi ${this.cooldown()} giây trước khi bình luận tiếp.`);
+      return;
+    }
     const text = (this.inlineReplyBody || '').trim();
     if (!text) return;
     this.inlinePosting.set(true);
@@ -707,6 +726,7 @@ export class Detail {
       this.inlineReplyBody = '';
       this.activeReplyRootId.set(null);
       this.replyTargetComment.set(null);
+      this.startCooldown(15);
       await this.loadComments();
       this.store.notify('Đã gửi câu trả lời.');
     } catch (e) {
@@ -717,11 +737,16 @@ export class Detail {
   }
 
   async postComment() {
+    if (this.cooldown() > 0) {
+      this.store.notify(`Vui lòng đợi ${this.cooldown()} giây trước khi bình luận tiếp.`);
+      return;
+    }
     this.posting.set(true);
     try {
       await this.api.request(`/catalog/${this.id}/comments`, 'POST', { body: this.body });
       this.body = '';
       this.commentPage.set(1);
+      this.startCooldown(15);
       await this.loadComments();
       this.store.notify('Đã gửi bình luận thành công.');
     } catch (e) {
