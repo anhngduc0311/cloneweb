@@ -1,5 +1,21 @@
 User-agent: *
 Allow: /
+Allow: /brand-mark.svg
+Allow: /cover-placeholder.svg
+Allow: /favicon.svg
+Allow: /api/catalog/image-proxy
 Disallow: /api/
+Disallow: /admin
+Disallow: /dang-nhap
+Disallow: /dang-ky
+Disallow: /doi-mat-khau
+Disallow: /theo-doi
+Disallow: /lich-su
 
-Sitemap: https://akatruyen.com/sitemap.xml
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+Sitemap: https://dokitruyen.com/sitemap.xml

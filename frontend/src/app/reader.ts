@@ -3,6 +3,7 @@ import { Title } from '@angular/platform-browser';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Api, Store, Reader as ReaderData, message, proxyImage } from './core';
+import { SeoService } from './seo.service';
 import { Icon } from './ui';
 
 export interface ZoomLevel {
@@ -398,6 +399,7 @@ export class Reader implements OnInit, OnDestroy {
   route = inject(ActivatedRoute);
   router = inject(Router);
   titleService = inject(Title);
+  seo = inject(SeoService);
 
   data = signal<ReaderData | null>(null);
   loading = signal(true);
@@ -535,7 +537,7 @@ export class Reader implements OnInit, OnDestroy {
       if (n !== this.epoch) return;
       this.data.set(r);
       if (r && r.manga && r.chapter) {
-        this.titleService.setTitle(`${r.manga.title} - ${r.chapter.title} | AkaTruyen`);
+        this.seo.setReaderSeo(r.manga, r.chapter);
       }
       void this.store.record(r).catch(e => this.store.notify(message(e)));
       this.scrollToTopInstant();

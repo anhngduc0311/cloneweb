@@ -10,8 +10,8 @@ import { Icon } from './ui';
   template: `
 <div class="auth-wrap">
   <section class="auth-panel glass-panel">
-    <a class="brand auth-brand" routerLink="/" aria-label="AkaTruyen - Trang chủ">
-      <img class="brand-symbol" src="/brand-mark.svg" width="44" height="44" alt="" aria-hidden="true"><span class="brand-wordmark">aka<span>truyen</span><span class="brand-period">.</span></span>
+    <a class="brand auth-brand" routerLink="/" aria-label="DokiTruyen - Trang chủ">
+      <img class="brand-symbol" src="/brand-mark.svg" width="44" height="44" alt="" aria-hidden="true"><span class="brand-wordmark">doki<span>truyen</span><span class="brand-period">.</span></span>
     </a>
     <h1>{{register() ? 'Tạo tài khoản' : 'Chào mừng trở lại'}}</h1>
     <p class="muted">{{register() ? 'Lưu những bộ truyện yêu thích và tiếp tục hành trình đọc truyện của bạn.' : 'Đăng nhập để đồng bộ truyện theo dõi và lịch sử đọc trên mọi thiết bị.'}}</p>
@@ -75,7 +75,7 @@ import { Icon } from './ui';
         {{register() ? 'Đăng nhập ngay' : 'Đăng ký ngay'}}
       </a>
     </div>
-    <small class="auth-note muted">AkaTruyen · Nền tảng đọc truyện online miễn phí</small>
+    <small class="auth-note muted">DokiTruyen · Nền tảng đọc truyện online miễn phí</small>
   </section>
 </div>`
 })

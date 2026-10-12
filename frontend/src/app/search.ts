@@ -2,6 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Api, Store, Manga, Page, message } from './core';
+import { SeoService } from './seo.service';
 import { Icon, MangaCardComponent, Pagination } from './ui';
 
 @Component({
@@ -168,6 +169,7 @@ export class Search {
   store = inject(Store);
   router = inject(Router);
   route = inject(ActivatedRoute);
+  seo = inject(SeoService);
 
   tags = signal<{ id: string; name: string }[]>([]);
   items = signal<Manga[]>([]);
@@ -199,6 +201,13 @@ export class Search {
         if (p.has(key)) this.form[key] = p.get(key)!;
       }
       this.page.set(Math.max(1, Number(p.get('page')) || 1));
+      const genreObj = this.tags().find(t => t.id === this.form.genre);
+      this.seo.setSearchSeo({
+        query: this.form.q,
+        genreName: genreObj?.name,
+        country: this.form.country,
+        sort: this.form.sort
+      });
       void this.load();
     });
   }

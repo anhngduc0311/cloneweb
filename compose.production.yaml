@@ -1,5 +1,5 @@
 # Standalone production stack; do not combine with compose.yaml.
-name: akatruyen
+name: dokitruyen
 
 x-runtime: &runtime
   restart: unless-stopped

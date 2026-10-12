@@ -3,6 +3,7 @@ import { Title, Meta } from '@angular/platform-browser';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Api, Store, Manga, Page, message } from './core';
+import { SeoService } from './seo.service';
 import { Icon, MangaCardComponent, Pagination } from './ui';
 
 @Component({
@@ -121,6 +122,7 @@ export class AuthorComponent {
   router = inject(Router);
   titleService = inject(Title);
   metaService = inject(Meta);
+  seo = inject(SeoService);
 
   name = signal('');
   searchQuery = '';
@@ -159,11 +161,7 @@ export class AuthorComponent {
   }
 
   updateTitle(authorName: string) {
-    this.titleService.setTitle(`Tác giả ${authorName} - Danh Sách Truyện Tranh | AkaTruyen`);
-    this.metaService.updateTag({
-      name: 'description',
-      content: `Xem toàn bộ các bộ truyện tranh sáng tác và minh họa bởi tác giả ${authorName} online miễn phí mới nhất tại AkaTruyen.`
-    });
+    this.seo.setAuthorSeo(authorName);
   }
 
   searchAuthor() {

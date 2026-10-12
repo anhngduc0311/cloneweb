@@ -155,7 +155,7 @@ fi
 
 random_hex() { od -An -N "$1" -tx1 /dev/urandom | tr -d ' \n'; }
 if [[ ! -f "$ENV_FILE" ]]; then
-  existing_volumes="$("${DOCKER[@]}" volume ls -q --filter label=com.docker.compose.project=akatruyen)"
+  existing_volumes="$("${DOCKER[@]}" volume ls -q --filter label=com.docker.compose.project=dokitruyen)"
   [[ -z "$existing_volumes" ]] || die 'Production volumes already exist. Restore .env.production from backup; do not regenerate database credentials.'
   log 'Generating first-run production credentials...'
   # Create atomically, so an interrupted write cannot leave partial credentials.
@@ -183,12 +183,12 @@ if ! grep -q "^GOOGLE_CLIENT_SECRET=" "$ENV_FILE" 2>/dev/null; then
   echo "GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}" >> "$ENV_FILE"
 fi
 
-COMPOSE=("${DOCKER[@]}" compose --project-name akatruyen --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
+COMPOSE=("${DOCKER[@]}" compose --project-name dokitruyen --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 on_error() {
   local code=$?
   printf '\n[deploy] Failed (exit %s). Existing volumes and credentials are preserved.\n' "$code" >&2
   "${COMPOSE[@]}" ps >&2 || true
-  printf '[deploy] Inspect logs: docker compose -p akatruyen --env-file .env.production -f compose.production.yaml logs --tail=100\n' >&2
+  printf '[deploy] Inspect logs: docker compose -p dokitruyen --env-file .env.production -f compose.production.yaml logs --tail=100\n' >&2
   exit "$code"
 }
 trap on_error ERR

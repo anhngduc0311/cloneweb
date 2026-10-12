@@ -34,7 +34,7 @@ git pull --ff-only
 bash deploy.sh
 ```
 
-Script dùng `compose.production.yaml` riêng, project Docker `akatruyen`; không dùng stack phát triển trong `compose.yaml`. Script tự tạo `.env.production` với mật khẩu ngẫu nhiên và quyền `600`, build frontend/API, khởi động đủ 5 dịch vụ, chờ healthcheck và kiểm tra kết nối DB/Redis/Meilisearch qua `/api/health`. Container tự khởi động lại cùng Docker; log được giới hạn dung lượng. Cài Docker qua [APT repository chính thức](https://docs.docker.com/engine/install/ubuntu/); cần root hoặc sudo khi cài đặt hoặc khi tài khoản chưa có quyền dùng Docker.
+Script dùng `compose.production.yaml` riêng, project Docker `dokitruyen`; không dùng stack phát triển trong `compose.yaml`. Script tự tạo `.env.production` với mật khẩu ngẫu nhiên và quyền `600`, build frontend/API, khởi động đủ 5 dịch vụ, chờ healthcheck và kiểm tra kết nối DB/Redis/Meilisearch qua `/api/health`. Container tự khởi động lại cùng Docker; log được giới hạn dung lượng. Cài Docker qua [APT repository chính thức](https://docs.docker.com/engine/install/ubuntu/); cần root hoặc sudo khi cài đặt hoặc khi tài khoản chưa có quyền dùng Docker.
 
 Mặc định website mở tại `http://IP_VPS` (cổng 80). Mở cổng tương ứng trong firewall của nhà cung cấp VPS. API, PostgreSQL, Redis và Meilisearch chỉ truy cập trong mạng Docker. Docker có thể bỏ qua rule UFW cho cổng đã publish; quản lý truy cập bằng firewall nhà cung cấp hoặc chuỗi `DOCKER-USER`.
 
@@ -46,8 +46,8 @@ bash deploy.sh --check
 WEB_PORT=8080 bash deploy.sh
 
 # Sau khi deploy, xem trạng thái / log
-docker compose -p akatruyen --env-file .env.production -f compose.production.yaml ps
-docker compose -p akatruyen --env-file .env.production -f compose.production.yaml logs --tail=100 -f
+docker compose -p dokitruyen --env-file .env.production -f compose.production.yaml ps
+docker compose -p dokitruyen --env-file .env.production -f compose.production.yaml logs --tail=100 -f
 ```
 
 Để lưu cổng lâu dài, chỉnh `WEB_PORT` trong `.env.production`. Nếu dùng Nginx/Caddy trên VPS làm reverse proxy HTTPS, đặt `WEB_BIND=127.0.0.1`, `WEB_PORT=8080` trong file này và proxy tới `http://127.0.0.1:8080`. Script chưa tự cấu hình tên miền/chứng chỉ HTTPS.

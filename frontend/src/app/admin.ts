@@ -969,7 +969,7 @@ export class AdminComponent implements OnInit {
       const url = URL.createObjectURL(zipBlob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `[AkaTruyen]_${safeMangaTitle}_Chap_${firstNum}_den_${lastNum}.zip`;
+      a.download = `[DokiTruyen]_${safeMangaTitle}_Chap_${firstNum}_den_${lastNum}.zip`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

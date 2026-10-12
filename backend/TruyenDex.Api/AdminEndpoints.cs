@@ -1104,7 +1104,7 @@ public static class AdminEndpoints
                 {
                     Level = "info",
                     Source = "system",
-                    Message = "Khởi chạy hệ thống AkaTruyen Admin Dashboard thành công."
+                    Message = "Khởi chạy hệ thống DokiTruyen Admin Dashboard thành công."
                 });
                 db.SystemLogs.Add(new SystemLog
                 {

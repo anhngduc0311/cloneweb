@@ -1,6 +1,7 @@
 import { Component, inject, signal, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Api, Manga, Page, message } from './core';
+import { SeoService } from './seo.service';
 import { Icon, MangaCardComponent, Pagination } from './ui';
 import { Sidebar } from './sidebar';
 
@@ -111,6 +112,7 @@ export class Home implements OnDestroy {
   api = inject(Api);
   route = inject(ActivatedRoute);
   router = inject(Router);
+  seo = inject(SeoService);
 
   items = signal<Manga[]>([]);
   pool = signal<Manga[]>([]);
@@ -128,6 +130,7 @@ export class Home implements OnDestroy {
   isPaused = false;
 
   constructor() {
+    this.seo.setHomeSeo();
     this.route.queryParamMap.subscribe(p => {
       this.page.set(Math.max(1, Number(p.get('page')) || 1));
       void this.load();
