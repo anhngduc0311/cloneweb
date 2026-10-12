@@ -92,8 +92,25 @@ public class Comment
     public AppUser User { get; set; } = null!;
     public Guid MangaId { get; set; }
     public Manga Manga { get; set; } = null!;
+    public Guid? ParentId { get; set; }
+    public Comment? Parent { get; set; }
     public string Body { get; set; } = "";
     public bool IsFlagged { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+public class Notification
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
+    public AppUser User { get; set; } = null!;
+    public Guid? ActorId { get; set; }
+    public string ActorName { get; set; } = "";
+    public Guid MangaId { get; set; }
+    public string MangaTitle { get; set; } = "";
+    public Guid? CommentId { get; set; }
+    public string Type { get; set; } = "comment_reply";
+    public string Message { get; set; } = "";
+    public bool IsRead { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 public class Report
@@ -161,6 +178,7 @@ public class AppDb(DbContextOptions<AppDb> options) : DbContext(options)
     public DbSet<BannedKeyword> BannedKeywords => Set<BannedKeyword>();
     public DbSet<TaxonomyItem> TaxonomyItems => Set<TaxonomyItem>();
     public DbSet<SystemLog> SystemLogs => Set<SystemLog>();
+    public DbSet<Notification> Notifications => Set<Notification>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -171,9 +189,13 @@ public class AppDb(DbContextOptions<AppDb> options) : DbContext(options)
         b.Entity<Chapter>().HasIndex(x => new { x.MangaId, x.Number, x.Language });
         b.Entity<Manga>().HasIndex(x => x.UpdatedAt);
         b.Entity<Comment>().HasIndex(x => new { x.MangaId, x.CreatedAt });
+        b.Entity<Comment>().HasOne(x => x.Parent).WithMany().HasForeignKey(x => x.ParentId).OnDelete(DeleteBehavior.SetNull);
         b.Entity<AppUser>().Property(x => x.Email).HasMaxLength(254);
         b.Entity<Comment>().Property(x => x.Body).HasMaxLength(2000);
         b.Entity<History>().HasOne(x => x.Chapter).WithMany().HasForeignKey(x => x.ChapterId).OnDelete(DeleteBehavior.Cascade);
+
+        b.Entity<Notification>().HasIndex(x => new { x.UserId, x.CreatedAt });
+        b.Entity<Notification>().HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
 
         b.Entity<Report>().HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.SetNull);
         b.Entity<Report>().HasOne(x => x.Manga).WithMany().HasForeignKey(x => x.MangaId).OnDelete(DeleteBehavior.SetNull);

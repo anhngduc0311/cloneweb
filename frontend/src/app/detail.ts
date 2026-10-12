@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, computed } from '@angular/core';
 import { Title, Meta } from '@angular/platform-browser';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -192,7 +192,37 @@ import { Sidebar } from './sidebar';
 
         @if(store.user()){
           <form class="comment-form" (ngSubmit)="postComment()">
-            <textarea name="comment" [(ngModel)]="body" rows="3" maxlength="2000" placeholder="Cảm nghĩ của bạn về bộ truyện này…" required></textarea>
+            <textarea
+              name="comment"
+              [(ngModel)]="body"
+              rows="3"
+              maxlength="2000"
+              placeholder="Viết bình luận cho bộ truyện này…"
+              required
+            ></textarea>
+
+            <!-- EMOJI / SMILEY TOOLBAR -->
+            <div class="emoji-bar">
+              <button type="button" class="btn-emoji-toggle" (click)="emojiOpen.set(!emojiOpen())" [class.active]="emojiOpen()" title="Mở danh sách biểu tượng cảm xúc">
+                <span>😀</span> <span>Icon</span>
+                <span class="emoji-arrow">{{emojiOpen() ? '▲' : '▼'}}</span>
+              </button>
+            </div>
+
+            @if(emojiOpen()){
+              <div class="emoji-picker-container glass-panel">
+                <div class="emoji-picker-header">
+                  <span>BIỂU TƯỢNG CẢM XÚC (SMILEYS)</span>
+                  <button type="button" class="btn-close-picker" (click)="emojiOpen.set(false)" aria-label="Đóng bảng icon">×</button>
+                </div>
+                <div class="emoji-picker-grid">
+                  @for(em of allEmojis; track em){
+                    <button type="button" class="picker-emoji-btn" (click)="insertEmoji(em)" [title]="em">{{em}}</button>
+                  }
+                </div>
+              </div>
+            }
+
             <div class="comment-submit">
               <small class="muted">{{body.length}} / 2.000 ký tự</small>
               <button class="primary" [disabled]="posting() || !body.trim()">
@@ -207,20 +237,93 @@ import { Sidebar } from './sidebar';
           </div>
         }
 
-        <div class="comment-list">
-          @for(c of comments(); track c.id){
-            <div class="comment-item">
-              <span class="avatar">{{c.name.slice(0, 1).toUpperCase()}}</span>
-              <div class="comment-content">
-                <div class="comment-header">
-                  <strong>{{c.name}}</strong>
-                  <small>{{ago(c.createdAt)}} trước</small>
+        <!-- FACEBOOK STYLE NESTED COMMENTS -->
+        <div class="fb-comments-list">
+          @for(root of threadComments(); track root.id){
+            <div class="fb-thread" [id]="'comment-' + root.id">
+              <!-- Root Comment -->
+              <div class="fb-comment-row root-row">
+                <span class="fb-avatar">{{root.name.slice(0, 1).toUpperCase()}}</span>
+                <div class="fb-comment-main">
+                  <div class="fb-bubble">
+                    <strong class="fb-author">{{root.name}}</strong>
+                    <p class="fb-text">{{root.body}}</p>
+                  </div>
+                  <div class="fb-meta-bar">
+                    <span class="fb-time">{{ago(root.createdAt)}} trước</span>
+                    @if(store.user()){
+                      <button type="button" class="fb-reply-btn" (click)="openInlineReply(root, root)">Trả lời</button>
+                    }
+                  </div>
                 </div>
-                <p>{{c.body}}</p>
-                @if(store.user()?.id === c.userId || store.user()?.role === 'admin'){
-                  <button class="text-button btn-delete-comment" (click)="deleteComment(c.id)">Xóa bình luận</button>
-                }
               </div>
+
+              <!-- Replies Branch (Các câu trả lời nằm ngay dưới bình luận này) -->
+              @if(root.replies && root.replies.length){
+                <div class="fb-replies-branch">
+                  @for(rep of root.replies; track rep.id){
+                    <div class="fb-comment-row reply-row" [id]="'comment-' + rep.id">
+                      <span class="fb-avatar sub-avatar">{{rep.name.slice(0, 1).toUpperCase()}}</span>
+                      <div class="fb-comment-main">
+                        <div class="fb-bubble sub-bubble">
+                          <strong class="fb-author">{{rep.name}}</strong>
+                          @if(rep.replyToName && rep.replyToName !== root.name){
+                            <span class="fb-reply-to-tag">› @{{rep.replyToName}}</span>
+                          }
+                          <p class="fb-text">{{rep.body}}</p>
+                        </div>
+                        <div class="fb-meta-bar">
+                          <span class="fb-time">{{ago(rep.createdAt)}} trước</span>
+                          @if(store.user()){
+                            <button type="button" class="fb-reply-btn" (click)="openInlineReply(root, rep)">Trả lời</button>
+                          }
+                        </div>
+                      </div>
+                    </div>
+                  }
+                </div>
+              }
+
+              <!-- Inline Reply Box (Mở ngay bên dưới bình luận này) -->
+              @if(activeReplyRootId() === root.id && store.user()){
+                <div class="fb-inline-reply-box">
+                  <span class="fb-avatar sub-avatar">{{store.user()?.name?.slice(0, 1)?.toUpperCase() || 'U'}}</span>
+                  <div class="fb-reply-input-wrap">
+                    @if(replyTargetComment() && replyTargetComment()?.id !== root.id){
+                      <div class="fb-target-badge">
+                        <span>Đang trả lời <strong>@{{replyTargetComment()?.name}}</strong></span>
+                        <button type="button" class="btn-clear-target" (click)="replyTargetComment.set(root)" title="Chuyển về trả lời bình luận gốc">×</button>
+                      </div>
+                    }
+                    <div class="fb-input-action-row">
+                      <input
+                        [id]="'reply-input-' + root.id"
+                        type="text"
+                        class="fb-input-field"
+                        [(ngModel)]="inlineReplyBody"
+                        [placeholder]="'Trả lời ' + (replyTargetComment()?.name || root.name) + '… (nhấn Enter để gửi)'"
+                        (keydown.enter)="sendInlineReply(root)"
+                        maxlength="2000"
+                      />
+                      <button
+                        type="button"
+                        class="fb-btn-send"
+                        [disabled]="inlinePosting() || !inlineReplyBody.trim()"
+                        (click)="sendInlineReply(root)"
+                      >
+                        {{inlinePosting() ? '…' : 'Gửi'}}
+                      </button>
+                      <button
+                        type="button"
+                        class="fb-btn-cancel"
+                        (click)="cancelInlineReply()"
+                      >
+                        Hủy
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              }
             </div>
           }
           @if(!comments().length){
@@ -264,6 +367,44 @@ export class Detail {
   commentPage = signal(1);
   community = signal({ rating: 0, votes: 0, myRating: 0 });
 
+  activeReplyRootId = signal<string | null>(null);
+  replyTargetComment = signal<Comment | null>(null);
+  inlineReplyBody = '';
+  inlinePosting = signal(false);
+
+  threadComments = computed(() => {
+    const items = this.comments();
+    const map = new Map<string, Comment>();
+    const roots: Comment[] = [];
+
+    items.forEach(c => {
+      map.set(c.id, { ...c, replies: [] });
+    });
+
+    items.forEach(c => {
+      const item = map.get(c.id)!;
+      if (c.parentId && map.has(c.parentId)) {
+        let parent = map.get(c.parentId)!;
+        let guard = 0;
+        while (parent.parentId && map.has(parent.parentId) && guard++ < 10) {
+          parent = map.get(parent.parentId)!;
+        }
+        parent.replies = parent.replies || [];
+        parent.replies.push(item);
+      } else {
+        roots.push(item);
+      }
+    });
+
+    roots.forEach(r => {
+      if (r.replies && r.replies.length) {
+        r.replies.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      }
+    });
+
+    return roots;
+  });
+
   posting = signal(false);
   following = signal(false);
   reading = signal(false);
@@ -272,6 +413,20 @@ export class Detail {
   ascending = false;
   expanded = false;
   body = '';
+  emojiOpen = signal(false);
+  allEmojis = [
+    '😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '🥲', '☺️', '😊', '😇',
+    '😈', '👿', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛',
+    '😜', '🤪', '😝', '🤑', '🤗', '🤭', '🤫', '🤔', '🤐', '🤨', '😐', '😑',
+    '😶', '😏', '😒', '🙄', '😬', '🤥', '😔', '😪', '🤤', '😴', '😷', '🤒',
+    '🤕', '🤢', '🤮', '🤧', '🥵', '🥶', '🥴', '😵', '🤯', '🤠', '🥳', '🥸',
+    '😎', '🤓', '🧐', '😕', '😟', '🙁', '☹️', '😮', '😯', '😲', '😳', '🥺',
+    '😦', '😧', '😨', '😰', '😥', '😢', '😭', '😱', '😖', '😣', '😞', '😓',
+    '😩', '😫', '🥱', '😤', '😡', '😠', '🤬', '💀', '☠️', '💩', '🤡', '👻',
+    '👽', '👾', '🤖', '🎃', '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍',
+    '💔', '💕', '💖', '👍', '👎', '👏', '🙌', '💪', '👑', '💎', '🔥', '✨',
+    '⭐', '💯', '🎉'
+  ];
   id = '';
   epoch = 0;
   chapterEpoch = 0;
@@ -518,6 +673,49 @@ export class Detail {
     }
   }
 
+  openInlineReply(root: Comment, target?: Comment) {
+    this.activeReplyRootId.set(root.id);
+    this.replyTargetComment.set(target || root);
+    this.inlineReplyBody = '';
+    setTimeout(() => {
+      if (typeof document !== 'undefined') {
+        const input = document.getElementById('reply-input-' + root.id) as HTMLInputElement | null;
+        if (input) {
+          input.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          input.focus();
+        }
+      }
+    }, 100);
+  }
+
+  cancelInlineReply() {
+    this.activeReplyRootId.set(null);
+    this.replyTargetComment.set(null);
+    this.inlineReplyBody = '';
+  }
+
+  async sendInlineReply(root: Comment) {
+    const text = (this.inlineReplyBody || '').trim();
+    if (!text) return;
+    this.inlinePosting.set(true);
+    try {
+      const target = this.replyTargetComment() || root;
+      await this.api.request(`/catalog/${this.id}/comments`, 'POST', {
+        body: text,
+        parentId: target.id
+      });
+      this.inlineReplyBody = '';
+      this.activeReplyRootId.set(null);
+      this.replyTargetComment.set(null);
+      await this.loadComments();
+      this.store.notify('Đã gửi câu trả lời.');
+    } catch (e) {
+      this.store.notify(message(e));
+    } finally {
+      this.inlinePosting.set(false);
+    }
+  }
+
   async postComment() {
     this.posting.set(true);
     try {
@@ -533,13 +731,8 @@ export class Detail {
     }
   }
 
-  async deleteComment(id: string) {
-    try {
-      await this.api.request('/comments/' + id, 'DELETE');
-      await this.loadComments();
-    } catch (e) {
-      this.store.notify(message(e));
-    }
+  insertEmoji(em: string) {
+    this.body = (this.body || '') + em;
   }
 
   goBack(e?: Event) {

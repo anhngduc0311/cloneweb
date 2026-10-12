@@ -108,6 +108,26 @@ async Task Remember(AppDb db, MangaCard m, MeilisearchClient? meili = null) {
         }
     } catch { }
 }
+async Task EnsureWelcomeNotification(AppDb db, Guid userId, string userName) {
+    try {
+        var hasWelcome = await db.Notifications.AnyAsync(n => n.UserId == userId && n.Type == "welcome");
+        if (!hasWelcome) {
+            db.Notifications.Add(new Notification {
+                UserId = userId,
+                ActorId = null,
+                ActorName = "DokiTruyen",
+                MangaId = Guid.Empty,
+                MangaTitle = "Hệ thống DokiTruyen",
+                CommentId = null,
+                Type = "welcome",
+                Message = $"Chào mừng {userName} đã đến với DokiTruyen! Chúc bạn có những phút giây đọc truyện thật vui vẻ và thư giãn 🎉",
+                IsRead = false,
+                CreatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+    } catch { }
+}
 app.MapGet("/api/health", async (AppDb db, IServiceProvider sp) => {
     var dbOk = await db.Database.CanConnectAsync();
     var redis = sp.GetService<IConnectionMultiplexer>();
@@ -136,7 +156,9 @@ app.MapPost("/api/auth/register", async (RegisterRequest req, AppDb db, Password
         return Results.BadRequest(new { message = "Tên từ 2–60 ký tự, email hợp lệ và mật khẩu từ 10–128 ký tự." });
     if (await db.Users.AnyAsync(u => u.Email == email)) return Results.Conflict(new { message = "Email này đã được đăng ký." });
     var u = new AppUser { Email = email, Name = name }; u.PasswordHash = hasher.HashPassword(u, req.Password!);
-    db.Users.Add(u); await db.SaveChangesAsync(); return Results.Ok(Session(u));
+    db.Users.Add(u); await db.SaveChangesAsync();
+    await EnsureWelcomeNotification(db, u.Id, u.Name);
+    return Results.Ok(Session(u));
 }).RequireRateLimiting("auth");
 app.MapPost("/api/auth/login", async (LoginRequest req, AppDb db, PasswordHasher<AppUser> hasher) => {
     if (req.Password is null || req.Password.Length > 128) return Results.BadRequest(new { message = "Thông tin đăng nhập không hợp lệ." });
@@ -149,6 +171,7 @@ app.MapPost("/api/auth/login", async (LoginRequest req, AppDb db, PasswordHasher
 
     if (u is null || u.IsBanned || string.IsNullOrEmpty(u.PasswordHash) || hasher.VerifyHashedPassword(u, u.PasswordHash, req.Password) == PasswordVerificationResult.Failed)
         return Results.Json(new { message = "Email hoặc mật khẩu không đúng." }, statusCode: 401);
+    await EnsureWelcomeNotification(db, u.Id, u.Name);
     return Results.Ok(Session(u));
 }).RequireRateLimiting("auth");
 
@@ -240,6 +263,7 @@ app.MapPost("/api/auth/google", async (GoogleAuthRequest req, AppDb db, IHttpCli
         await db.SaveChangesAsync();
     }
 
+    await EnsureWelcomeNotification(db, u.Id, u.Name);
     return Results.Ok(Session(u));
 }).RequireRateLimiting("auth");
 
@@ -433,7 +457,17 @@ app.MapGet("/api/comments", async (Guid? mangaId, int? page, AppDb db) => {
     var query = db.Comments.AsNoTracking(); if (mangaId.HasValue) query = query.Where(x => x.MangaId == mangaId);
     var p = Math.Clamp(page ?? 1, 1, 10000);
     var total = await query.CountAsync();
-    var items = await query.OrderByDescending(x => x.CreatedAt).Skip((p - 1) * 20).Take(20).Select(x => new { x.Id, x.MangaId, mangaTitle = x.Manga.Title, x.UserId, name = x.User.Name, x.Body, x.CreatedAt }).ToListAsync();
+    var items = await query.OrderByDescending(x => x.CreatedAt).Skip((p - 1) * 20).Take(20).Select(x => new {
+        x.Id,
+        x.MangaId,
+        mangaTitle = x.Manga.Title,
+        x.UserId,
+        name = x.User.Name,
+        x.ParentId,
+        replyToName = x.Parent != null ? x.Parent.User.Name : null,
+        x.Body,
+        x.CreatedAt
+    }).ToListAsync();
     return Results.Ok(new { items, total, page = p, pageSize = 20 });
 });
 app.MapPost("/api/catalog/{id:guid}/comments", async (Guid id, CommentRequest req, ClaimsPrincipal user, AppDb db, Catalog catalog) => {
@@ -441,15 +475,96 @@ app.MapPost("/api/catalog/{id:guid}/comments", async (Guid id, CommentRequest re
     var lowerBody = body.ToLowerInvariant();
     var bannedWords = await db.BannedKeywords.Select(k => k.Keyword).ToListAsync();
     bool flagged = bannedWords.Any(w => !string.IsNullOrWhiteSpace(w) && lowerBody.Contains(w));
-    await Remember(db, await catalog.Detail(id)); 
-    db.Comments.Add(new() { MangaId = id, UserId = UserId(user), Body = body, IsFlagged = flagged }); 
+    var detail = await catalog.Detail(id);
+    await Remember(db, detail);
+    var currentUserId = UserId(user);
+    var currentUserName = user.FindFirstValue(ClaimTypes.Name) ?? "Thành viên";
+    if (string.IsNullOrWhiteSpace(currentUserName) || currentUserName == "Thành viên") {
+        var u = await db.Users.FindAsync(currentUserId);
+        if (u != null) currentUserName = u.Name;
+    }
+
+    Comment? parentComment = null;
+    if (req.ParentId.HasValue) {
+        parentComment = await db.Comments.Include(c => c.Manga).Include(c => c.User).FirstOrDefaultAsync(c => c.Id == req.ParentId.Value);
+    }
+
+    var comment = new Comment {
+        MangaId = id,
+        UserId = currentUserId,
+        ParentId = parentComment?.Id,
+        Body = body,
+        IsFlagged = flagged
+    };
+    db.Comments.Add(comment);
+
+    if (parentComment != null && parentComment.UserId != currentUserId) {
+        var mangaTitle = !string.IsNullOrWhiteSpace(detail?.Title) ? detail.Title : (parentComment.Manga?.Title ?? "truyện");
+        var preview = body.Length > 80 ? body[..77] + "..." : body;
+        var notif = new Notification {
+            UserId = parentComment.UserId,
+            ActorId = currentUserId,
+            ActorName = currentUserName,
+            MangaId = id,
+            MangaTitle = mangaTitle,
+            CommentId = comment.Id,
+            Type = "comment_reply",
+            Message = $"{currentUserName} đã trả lời bình luận của bạn: \"{preview}\"",
+            IsRead = false,
+            CreatedAt = DateTime.UtcNow
+        };
+        db.Notifications.Add(notif);
+    }
+
     await db.SaveChangesAsync(); 
     return Results.Created("/api/comments?mangaId=" + id, new { message = flagged ? "Bình luận đã gửi và đang chờ duyệt từ ngữ." : "Đã gửi bình luận." });
 }).RequireAuthorization().RequireRateLimiting("auth");
 app.MapDelete("/api/comments/{id:guid}", async (Guid id, ClaimsPrincipal user, AppDb db) => {
     var comment = await db.Comments.FindAsync(id); if (comment is null) return Results.NotFound();
-    if (comment.UserId != UserId(user) && !user.IsInRole("admin")) return Results.Forbid();
+    if (!user.IsInRole("admin") && !user.IsInRole("superadmin")) return Results.Forbid();
     db.Comments.Remove(comment); await db.SaveChangesAsync(); return Results.NoContent();
+}).RequireAuthorization();
+
+app.MapGet("/api/notifications", async (ClaimsPrincipal user, AppDb db) => {
+    var uid = UserId(user);
+    var uName = user.FindFirstValue(ClaimTypes.Name) ?? "bạn";
+    await EnsureWelcomeNotification(db, uid, uName);
+    var unreadCount = await db.Notifications.CountAsync(x => x.UserId == uid && !x.IsRead);
+    var items = await db.Notifications.AsNoTracking()
+        .Where(x => x.UserId == uid)
+        .OrderByDescending(x => x.CreatedAt)
+        .Take(30)
+        .Select(x => new {
+            x.Id,
+            x.ActorId,
+            x.ActorName,
+            x.MangaId,
+            x.MangaTitle,
+            x.CommentId,
+            x.Type,
+            x.Message,
+            x.IsRead,
+            x.CreatedAt
+        })
+        .ToListAsync();
+    return Results.Ok(new { items, unreadCount });
+}).RequireAuthorization();
+
+app.MapPut("/api/notifications/{id:guid}/read", async (Guid id, ClaimsPrincipal user, AppDb db) => {
+    var uid = UserId(user);
+    var notif = await db.Notifications.FirstOrDefaultAsync(x => x.Id == id && x.UserId == uid);
+    if (notif != null && !notif.IsRead) {
+        notif.IsRead = true;
+        await db.SaveChangesAsync();
+    }
+    return Results.NoContent();
+}).RequireAuthorization();
+
+app.MapPut("/api/notifications/read-all", async (ClaimsPrincipal user, AppDb db) => {
+    var uid = UserId(user);
+    await db.Notifications.Where(x => x.UserId == uid && !x.IsRead)
+        .ExecuteUpdateAsync(s => s.SetProperty(x => x.IsRead, true));
+    return Results.NoContent();
 }).RequireAuthorization();
 app.MapPut("/api/catalog/{id:guid}/rating", async (Guid id, RatingRequest req, ClaimsPrincipal user, AppDb db, Catalog catalog) => {
     if (req.Score is < 1 or > 10) return Results.BadRequest(new { message = "Điểm đánh giá từ 1–10." });
@@ -595,6 +710,26 @@ app.MapGet("/sitemap_index.xml", GenerateSitemap);
 using (var scope = app.Services.CreateScope()) {
     var db = scope.ServiceProvider.GetRequiredService<AppDb>();
     await db.Database.MigrateAsync();
+    try {
+        await db.Database.ExecuteSqlRawAsync(@"
+            ALTER TABLE ""Comments"" ADD COLUMN IF NOT EXISTS ""ParentId"" uuid NULL;
+            CREATE TABLE IF NOT EXISTS ""Notifications"" (
+                ""Id"" uuid NOT NULL PRIMARY KEY,
+                ""UserId"" uuid NOT NULL,
+                ""ActorId"" uuid NULL,
+                ""ActorName"" character varying(200) NOT NULL DEFAULT '',
+                ""MangaId"" uuid NOT NULL,
+                ""MangaTitle"" character varying(500) NOT NULL DEFAULT '',
+                ""CommentId"" uuid NULL,
+                ""Type"" character varying(50) NOT NULL DEFAULT 'comment_reply',
+                ""Message"" character varying(1000) NOT NULL DEFAULT '',
+                ""IsRead"" boolean NOT NULL DEFAULT FALSE,
+                ""CreatedAt"" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT ""FK_Notifications_Users_UserId"" FOREIGN KEY (""UserId"") REFERENCES ""Users"" (""Id"") ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS ""IX_Notifications_UserId_CreatedAt"" ON ""Notifications"" (""UserId"", ""CreatedAt"" DESC);
+        ");
+    } catch { }
     var hasher = scope.ServiceProvider.GetRequiredService<PasswordHasher<AppUser>>();
     var adminUser = await db.Users.FirstOrDefaultAsync(x => x.Email == "admin")
                  ?? await db.Users.FirstOrDefaultAsync(x => x.Role == "admin");

@@ -44,7 +44,7 @@ import { Icon } from './ui';
 
       <label>
         <span>{{register() ? 'Địa chỉ Email' : 'Email hoặc Tên tài khoản'}}</span>
-        <input [type]="register() ? 'email' : 'text'" name="email" [(ngModel)]="email" required maxlength="254" [autocomplete]="register() ? 'email' : 'username'" [placeholder]="register() ? 'name@example.com' : 'admin hoặc email'">
+        <input [type]="register() ? 'email' : 'text'" name="email" [(ngModel)]="email" required maxlength="254" [autocomplete]="register() ? 'email' : 'username'" [placeholder]="register() ? 'name@example.com' : 'Nhập username'">
       </label>
 
       <label>
@@ -400,4 +400,4 @@ export class Library {
   <a class="primary" routerLink="/">Về trang chủ</a>
 </div>`
 })
-export class NotFound {}
+export class NotFound { }

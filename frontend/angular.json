@@ -54,7 +54,8 @@
             ],
             "styles": [
               "src/styles.scss",
-              "src/editorial.scss"
+              "src/editorial.scss",
+              "src/anidoki.scss"
             ]
           },
           "configurations": {

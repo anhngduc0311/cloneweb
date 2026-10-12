@@ -1,6 +1,6 @@
-import { Component, inject, signal, OnDestroy } from '@angular/core';
+import { Component, computed, effect, inject, signal, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { Api, Manga, Page, message } from './core';
+import { Api, Manga, Page, Store, cleanDescription, message, statuses } from './core';
 import { SeoService } from './seo.service';
 import { Icon, MangaCardComponent, Pagination } from './ui';
 import { Sidebar } from './sidebar';
@@ -9,13 +9,84 @@ import { Sidebar } from './sidebar';
   selector: 'app-home',
   imports: [RouterLink, Icon, MangaCardComponent, Pagination, Sidebar],
   template: `
+<section class="doki-spotlight" aria-label="Truyện nổi bật" (mouseenter)="pauseAutoSlide()" (mouseleave)="resumeAutoSlide()">
+  @if(spotlight(); as m){
+    <img class="spotlight-backdrop" [src]="m.cover" alt="" fetchpriority="high" referrerpolicy="no-referrer" (error)="coverFallback($event)">
+    <div class="spotlight-shade"></div>
+    <div class="spotlight-content">
+      <span class="spotlight-eyebrow"><span></span> TÂM ĐIỂM HÔM NAY</span>
+      <div class="spotlight-meta"><span class="spotlight-status">{{statuses[m.status] || 'Đang cập nhật'}}</span><span class="spotlight-rating"><app-icon name="star"/> {{m.rating.toFixed(1)}}</span><span>{{m.country === 'ko' ? 'Manhwa' : m.country === 'cn' ? 'Manhua' : 'Manga'}}</span><span>DokiTruyen</span></div>
+      <h1>{{m.title}}</h1>
+      <p>{{description(m)}}</p>
+      <div class="spotlight-actions">
+        <a class="spotlight-read" [routerLink]="m.chapters.length ? ['/chuong', m.chapters[0].id] : ['/truyen-tranh', m.id]" (click)="savePosition(m.id)"><app-icon name="play"/> Đọc ngay</a>
+        <a class="spotlight-detail" [routerLink]="['/truyen-tranh', m.id]" (click)="savePosition(m.id)"><app-icon name="info"/> Chi tiết</a>
+        <button class="spotlight-save" [disabled]="following()" [class.saved]="isFollowed(m.id)" [attr.aria-label]="isFollowed(m.id) ? 'Bỏ theo dõi truyện' : 'Theo dõi truyện'" [attr.aria-pressed]="isFollowed(m.id)" (click)="toggleFollow(m)"><app-icon name="bookmark"/></button>
+      </div>
+      <div class="spotlight-controls">
+        <button class="spotlight-pause" [attr.aria-label]="autoPaused() ? 'Tiếp tục chuyển truyện' : 'Tạm dừng chuyển truyện'" [attr.aria-pressed]="autoPaused()" (click)="autoPaused.set(!autoPaused())">{{autoPaused() ? '▶' : 'Ⅱ'}}</button>
+        <div class="spotlight-dots" aria-label="Chọn truyện nổi bật">
+          @for(item of spotlightPool(); track item.id; let i = $index){<button [class.active]="spotlightIndex() === i" [attr.aria-label]="'Hiển thị truyện nổi bật ' + (i + 1)" [attr.aria-pressed]="spotlightIndex() === i" (click)="selectSpotlight(i)"></button>}
+        </div>
+      </div>
+    </div>
+  }@else{
+    <div class="spotlight-content"><span class="spotlight-eyebrow">KHÁM PHÁ DOKITRUYEN</span><h1>Mỗi trang truyện,<br>một thế giới mới.</h1><p>Khám phá Manga, Manhwa và Manhua. Những câu chuyện yêu thích luôn chờ bạn.</p><a class="spotlight-read" routerLink="/tim-truyen-nang-cao"><app-icon name="compass"/> Khám phá ngay</a></div>
+  }
+</section>
+
+
+<div class="columns">
+  <section class="main-content-section">
+    <div class="section-title">
+      <div><h2>Mới cập nhật</h2><p class="section-subtitle">Truyện và các chương vừa được cập nhật</p></div>
+      <a class="view-all-btn" routerLink="/tim-truyen-nang-cao" [queryParams]="{country:'ja', sort:'latest'}" title="Xem tất cả Manga Nhật Bản mới cập nhật">
+        <span class="desktop-text">Xem tất cả</span>
+        <span class="mobile-text">Tất cả</span>
+        <app-icon name="arrowRight"/>
+      </a>
+    </div>
+    
+    <div class="list-meta-bar">
+      <span>Cập nhật mới nhất → cũ nhất</span>
+      <span class="total-badge">{{total().toLocaleString('vi')}} truyện</span>
+    </div>
+
+    @if(error()){
+      <div class="error-state glass-panel">
+        <app-icon name="info"/>
+        <h3>Chưa thể tải danh sách truyện</h3>
+        <p>{{error()}}</p>
+        <button class="primary" (click)="load()">Thử lại</button>
+      </div>
+    }
+
+    <div class="manga-grid">
+      @if(loading()){
+        @for(i of skeletons; track i){
+          <div class="skeleton skeleton-card"></div>
+        }
+      }@else{
+        @for(m of items(); track m.id){
+          <app-card [manga]="m"/>
+        }
+      }
+    </div>
+
+    @if(!loading() && !error()){
+      <app-pagination [page]="page()" [total]="total()" [size]="28" [change]="goPage" [hover]="prefetchPage"/>
+    }
+  </section>
+
+
+</div>
 <section class="recommendations"
          (mouseenter)="pauseAutoSlide()"
          (mouseleave)="resumeAutoSlide()"
          (touchstart)="pauseAutoSlide()"
          (touchend)="resumeAutoSlide()">
   <div class="section-title">
-    <div><span class="eyebrow">ĐÁNG ĐỂ KHÁM PHÁ</span><h1>Truyện Manhwa mới</h1></div>
+    <div><h2>Manhwa nổi bật</h2><p class="section-subtitle">Những câu chuyện đáng để khám phá</p></div>
     <a class="view-all-manhwa-link" routerLink="/tim-truyen-nang-cao" [queryParams]="{country:'ko'}">
       <span class="desktop-text">Xem tất cả</span>
       <span class="mobile-text">Tất cả Manhwa</span>
@@ -61,51 +132,8 @@ import { Sidebar } from './sidebar';
     <div class="featured-empty"><span>Đề cử đang tạm gián đoạn.</span><button (click)="loadFeatured()">Tải lại <app-icon name="arrowRight"/></button></div>
   }
 </section>
+<section class="home-community" aria-label="Cộng đồng đọc truyện"><app-sidebar/></section>
 
-<div class="columns">
-  <section class="main-content-section">
-    <div class="section-title">
-      <div><span class="eyebrow">CHƯƠNG MỚI MỖI NGÀY</span><h2>Manga mới cập nhật <span class="update-dot"></span></h2></div>
-      <a class="view-all-btn" routerLink="/tim-truyen-nang-cao" [queryParams]="{country:'ja', sort:'latest'}" title="Xem tất cả Manga Nhật Bản mới cập nhật">
-        <span class="desktop-text">Xem tất cả</span>
-        <span class="mobile-text">Tất cả</span>
-        <app-icon name="arrowRight"/>
-      </a>
-    </div>
-    
-    <div class="list-meta-bar">
-      <span>Cập nhật mới nhất → cũ nhất</span>
-      <span class="total-badge">{{total().toLocaleString('vi')}} truyện</span>
-    </div>
-
-    @if(error()){
-      <div class="error-state glass-panel">
-        <app-icon name="info"/>
-        <h3>Chưa thể tải danh sách truyện</h3>
-        <p>{{error()}}</p>
-        <button class="primary" (click)="load()">Thử lại</button>
-      </div>
-    }
-
-    <div class="manga-grid">
-      @if(loading()){
-        @for(i of skeletons; track i){
-          <div class="skeleton skeleton-card"></div>
-        }
-      }@else{
-        @for(m of items(); track m.id){
-          <app-card [manga]="m"/>
-        }
-      }
-    </div>
-
-    @if(!loading() && !error()){
-      <app-pagination [page]="page()" [total]="total()" [size]="28" [change]="goPage" [hover]="prefetchPage"/>
-    }
-  </section>
-
-  <app-sidebar/>
-</div>
 `
 })
 export class Home implements OnDestroy {
@@ -113,6 +141,28 @@ export class Home implements OnDestroy {
   route = inject(ActivatedRoute);
   router = inject(Router);
   seo = inject(SeoService);
+  store = inject(Store);
+  statuses = statuses;
+  autoPaused = signal(typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  spotlightIndex = signal(0);
+  spotlightPool = computed(() => (this.pool().length ? this.pool() : this.items()).slice(0, 7));
+  spotlight = computed(() => this.spotlightPool()[this.spotlightIndex() % (this.spotlightPool().length || 1)]);
+  descriptions = signal<Record<string, string>>({});
+  private requestedDescriptions = new Set<string>();
+  description(m: Manga) {
+    return cleanDescription(this.descriptions()[m.id] || m.description) === 'Chưa có mô tả cho bộ truyện này.'
+      ? 'Khám phá câu chuyện mới, theo dõi chương mới nhất và tiếp tục hành trình cùng DokiTruyen.'
+      : cleanDescription(this.descriptions()[m.id] || m.description);
+  }
+  following = signal(false);
+  isFollowed(id: string) { return this.store.isFollowed(id); }
+  async toggleFollow(m: Manga) {
+    if (!this.store.user()) { void this.router.navigate(['/dang-nhap']); return; }
+    this.following.set(true);
+    try { await this.store.follow(m); } catch (e) { this.store.notify(message(e)); }
+    finally { this.following.set(false); }
+  }
+  selectSpotlight(index: number) { this.spotlightIndex.set(index); this.startAutoSlide(); }
 
   items = signal<Manga[]>([]);
   pool = signal<Manga[]>([]);
@@ -130,12 +180,21 @@ export class Home implements OnDestroy {
   isPaused = false;
 
   constructor() {
+    effect(() => {
+      const m = this.spotlight();
+      if (!m || m.description || this.requestedDescriptions.has(m.id)) return;
+      this.requestedDescriptions.add(m.id);
+      void this.api.request<Manga>('/catalog/' + m.id, 'GET', undefined, true)
+        .then(detail => this.descriptions.update(values => ({ ...values, [m.id]: detail.description })))
+        .catch(() => {});
+    });
     this.seo.setHomeSeo();
     this.route.queryParamMap.subscribe(p => {
       this.page.set(Math.max(1, Number(p.get('page')) || 1));
       void this.load();
     });
     void this.loadFeatured();
+    this.startAutoSlide();
   }
 
   ngOnDestroy() {
@@ -200,10 +259,10 @@ export class Home implements OnDestroy {
     this.stopAutoSlide();
     if (typeof window === 'undefined') return;
     this.autoSlideTimer = setInterval(() => {
-      if (!this.isPaused && this.pool().length > 1 && !document.hidden) {
-        this.rotate(1);
+      if (!this.isPaused && !this.autoPaused() && this.spotlightPool().length > 1 && !document.hidden) {
+        this.spotlightIndex.update(i => (i + 1) % this.spotlightPool().length);
       }
-    }, 3500);
+    }, 6500);
   }
 
   stopAutoSlide() {
@@ -292,7 +351,8 @@ export class Home implements OnDestroy {
   goPage = (page: number) => {
     this.prefetchPage(page);
     void this.router.navigate(['/'], { queryParams: { page } });
-    const targetY = typeof window !== 'undefined' && window.innerWidth <= 768 ? 200 : 350;
-    window.scrollTo({ top: targetY, behavior: 'smooth' });
+    const section = document.querySelector('.main-content-section');
+    const targetY = section ? window.scrollY + section.getBoundingClientRect().top - 96 : 0;
+    window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
   };
 }

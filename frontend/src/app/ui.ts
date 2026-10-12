@@ -21,6 +21,7 @@ export class Icon {
     bookmark: 'M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z',
     library: 'M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z M4 19.5a2.5 2.5 0 0 0 2.5 2.5H20 M6 6h10 M6 10h10',
     compass: 'm16.2 7.8-2 6.4-6.4 2 2-6.4 6.4-2Z M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0',
+    bell: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 0 1-3.46 0',
     comment: 'M21 3H3v14h5l4 4 4-4h5V3Z',
     user: 'M16 6a4 4 0 1 1-8 0a4 4 0 0 1 8 0M4 22v-3a8 8 0 0 1 16 0v3',
     settings: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z',
@@ -84,6 +85,9 @@ export class Icon {
     @if(manga().contentRating === 'erotica' || manga().contentRating === 'pornographic'){
       <span class="age-label">18+</span>
     }
+    <span class="cover-rating"><app-icon name="star"/> {{manga().rating.toFixed(1)}}</span>
+    @if(manga().chapters.length){<span class="cover-chapter">{{manga().chapters[0].title}}</span>}
+    <span class="cover-read" aria-hidden="true"><app-icon name="book"/></span>
   </a>
   <div class="manga-card-info">
     <div class="card-stats">
@@ -91,6 +95,7 @@ export class Icon {
       <span><app-icon name="heart"/> {{compact(manga().follows)}}</span>
     </div>
     <h3><a [routerLink]="['/truyen-tranh', manga().id]" (click)="savePosition()" [title]="manga().title">{{manga().title}}</a></h3>
+    <p class="card-origin">{{manga().country === 'ko' ? 'Manhwa' : manga().country === 'cn' ? 'Manhua' : 'Manga'}} · {{manga().year || 'DokiTruyen'}}</p>
   </div>
   <div class="mini-chapters">
     @for(c of manga().chapters.slice(0, 3); track c.id){

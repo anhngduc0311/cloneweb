@@ -2,7 +2,7 @@ import { Component, signal, inject, HostListener, ElementRef, OnInit } from '@an
 import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { Icon } from './ui';
-import { Api, Store, Manga, statuses } from './core';
+import { Api, Store, Manga, statuses, ago, NotificationItem } from './core';
 
 @Component({
   selector: 'app-root',
@@ -19,11 +19,13 @@ export class App implements OnInit {
   query = '';
   menu = signal(false);
   account = signal(false);
+  notificationsOpen = signal(false);
   genresOpen = signal(false);
   mobileSearchOpen = signal(false);
   tags = signal<{ id: string; name: string }[]>([]);
   reader = signal(false);
   isDockHidden = signal(false);
+  ago = ago;
   private lastScrollY = 0;
 
   // Search suggestions state
@@ -44,6 +46,7 @@ export class App implements OnInit {
       if (e instanceof NavigationEnd) {
         this.menu.set(false);
         this.account.set(false);
+        this.notificationsOpen.set(false);
         this.genresOpen.set(false);
         this.suggestionsOpen.set(false);
         this.mobileSearchOpen.set(false);
@@ -194,9 +197,34 @@ export class App implements OnInit {
 
   @HostListener('document:click', ['$event'])
   onDocumentClick(event: MouseEvent) {
-    const wrap = this.el.nativeElement.querySelector('.header-search-wrap');
-    if (wrap && !wrap.contains(event.target as Node)) {
+    const searchWrap = this.el.nativeElement.querySelector('.header-search-wrap');
+    if (searchWrap && !searchWrap.contains(event.target as Node)) {
       this.suggestionsOpen.set(false);
+    }
+    const notifWrap = this.el.nativeElement.querySelector('.notification-wrap');
+    if (notifWrap && !notifWrap.contains(event.target as Node)) {
+      this.notificationsOpen.set(false);
+    }
+    const accWrap = this.el.nativeElement.querySelector('.account-wrap');
+    if (accWrap && !accWrap.contains(event.target as Node)) {
+      this.account.set(false);
+    }
+  }
+
+  toggleNotifications() {
+    const next = !this.notificationsOpen();
+    this.notificationsOpen.set(next);
+    if (next) {
+      this.account.set(false);
+      this.genresOpen.set(false);
+      void this.store.loadNotifications();
+    }
+  }
+
+  async onNotificationClick(n: NotificationItem) {
+    this.notificationsOpen.set(false);
+    if (!n.isRead) {
+      await this.store.markNotificationRead(n.id);
     }
   }
 
@@ -230,6 +258,7 @@ export class App implements OnInit {
   escape() {
     this.menu.set(false);
     this.account.set(false);
+    this.notificationsOpen.set(false);
     this.genresOpen.set(false);
     this.suggestionsOpen.set(false);
     this.mobileSearchOpen.set(false);

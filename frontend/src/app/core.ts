@@ -6,7 +6,8 @@ export interface Page<T> { items:T[]; total:number; page:number; pageSize:number
 export interface Reader { chapter:Chapter; manga:Manga; pages:string[]; dataSaverPages:string[]; externalUrl:string|null; navigation:Chapter[]; }
 export interface User { id:string; name:string; email:string; role:string; coins?:number; isBanned?:boolean; canChangePassword?:boolean; }
 export interface LibraryItem { mangaId:string; title:string; cover:string; chapterId?:string; chapterTitle?:string; readAt?:string; }
-export interface Comment { id:string; mangaId:string; mangaTitle:string; userId:string; name:string; body:string; createdAt:string; }
+export interface Comment { id:string; mangaId:string; mangaTitle:string; userId:string; name:string; parentId?:string|null; replyToName?:string|null; body:string; createdAt:string; replies?:Comment[]; }
+export interface NotificationItem { id:string; actorId?:string; actorName:string; mangaId:string; mangaTitle:string; commentId?:string; type:string; message:string; isRead:boolean; createdAt:string; }
 export interface Settings { language:string; dataSaver:boolean; width:number; theme:string; }
 export function readStored<T>(key:string, fallback:T):T {
   try {
@@ -198,14 +199,22 @@ export class Store {
   user=signal<User|null>(readStored('td-user', null));
   follows=signal<LibraryItem[]>([]);
   history=signal<LibraryItem[]>(readStored('td-history',[]));
+  notifications=signal<NotificationItem[]>([]);
+  unreadNotifications=signal<number>(0);
   settings=signal<Settings>(readStored('td-settings',{language:'vi',dataSaver:true,width:900,theme:'dark'}));
   toast=signal('');
   private timer?:ReturnType<typeof setTimeout>;
+  private notifTimer?:ReturnType<typeof setInterval>;
   private restorePromise: Promise<User | null> | null = null;
 
   constructor(private api:Api){
     this.applyTheme();
     if(getStoredToken()) void this.restore();
+    if(typeof window !== 'undefined'){
+      this.notifTimer = setInterval(() => {
+        if(this.user()) void this.loadNotifications();
+      }, 30000);
+    }
   }
 
   notify(text:string){this.toast.set(text);clearTimeout(this.timer);this.timer=setTimeout(()=>this.toast.set(''),4500);}
@@ -286,11 +295,44 @@ export class Store {
     clearStoredAuth();
     this.user.set(null);
     this.follows.set([]);
+    this.notifications.set([]);
+    this.unreadNotifications.set(0);
     this.history.set(readStored('td-history',[]));
     this.notify('Đã đăng xuất.');
   }
 
-  async refreshLibrary(){if(!this.user())return;const r=await this.api.request<{follows:LibraryItem[];history:LibraryItem[]}>('/library');this.follows.set(r.follows);this.history.set(r.history);}
+  async loadNotifications(){
+    if(!this.user()) return;
+    try {
+      const res = await this.api.request<{items:NotificationItem[]; unreadCount:number}>('/notifications');
+      this.notifications.set(res.items);
+      this.unreadNotifications.set(res.unreadCount);
+    } catch {}
+  }
+
+  async markNotificationRead(id: string){
+    this.notifications.update(list => list.map(n => n.id === id ? { ...n, isRead: true } : n));
+    this.unreadNotifications.update(c => Math.max(0, c - 1));
+    try {
+      await this.api.request('/notifications/' + id + '/read', 'PUT');
+    } catch {}
+  }
+
+  async markAllNotificationsRead(){
+    this.notifications.update(list => list.map(n => ({ ...n, isRead: true })));
+    this.unreadNotifications.set(0);
+    try {
+      await this.api.request('/notifications/read-all', 'PUT');
+    } catch {}
+  }
+
+  async refreshLibrary(){
+    if(!this.user())return;
+    const r=await this.api.request<{follows:LibraryItem[];history:LibraryItem[]}>('/library');
+    this.follows.set(r.follows);
+    this.history.set(r.history);
+    void this.loadNotifications();
+  }
   isFollowed(id:string){return this.follows().some(x=>x.mangaId===id);}
   async follow(m:Manga){if(!this.user())throw new Error('Vui lòng đăng nhập để theo dõi truyện.');const followed=!this.isFollowed(m.id);await this.api.request(`/library/follows/${m.id}`,'PUT',{followed});await this.refreshLibrary();this.notify(followed?'Đã thêm vào truyện theo dõi.':'Đã bỏ theo dõi truyện.');}
   async record(r:Reader){const item:LibraryItem={mangaId:r.manga.id,title:r.manga.title,cover:r.manga.cover,chapterId:r.chapter.id,chapterTitle:r.chapter.title,readAt:new Date().toISOString()};if(this.user()){await this.api.request(`/library/history/${r.chapter.id}`,'PUT',{});await this.refreshLibrary();}else{this.history.update(v=>[item,...v.filter(x=>x.mangaId!==item.mangaId)].slice(0,200));localStorage.setItem('td-history',JSON.stringify(this.history()));}}

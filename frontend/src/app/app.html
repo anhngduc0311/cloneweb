@@ -11,6 +11,16 @@
         <img class="brand-symbol" src="/brand-mark.png" width="44" height="44" alt="" aria-hidden="true"><span class="brand-wordmark">doki<span>truyen</span><span class="brand-period">.</span></span>
       </a>
 
+    <nav class="header-navigation" aria-label="Điều hướng chính">
+      <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact:true}"><app-icon name="home"/> Trang chủ</a>
+      <a routerLink="/tim-truyen-nang-cao" routerLinkActive="active"><app-icon name="compass"/> Khám phá</a>
+      <button class="genre-nav-btn" [class.active]="genresOpen()" [attr.aria-expanded]="genresOpen()" (click)="genres()"><app-icon name="tag"/> Thể loại <app-icon name="chevronDown"/></button>
+      <span class="nav-divider" aria-hidden="true"></span>
+      <a routerLink="/theo-doi" routerLinkActive="active"><app-icon name="heart"/> Thư viện</a>
+      <a routerLink="/lich-su" routerLinkActive="active"><app-icon name="clock"/> Lịch sử</a>
+      <a class="nav-ranking" routerLink="/tim-truyen-nang-cao" [queryParams]="{sort:'rating'}"><app-icon name="trophy"/> Xếp hạng</a>
+    </nav>
+
       <!-- Desktop / Tablet Search Wrap -->
       <div class="header-search-wrap">
         <form class="header-search" (ngSubmit)="search()">
@@ -110,6 +120,76 @@
         <button class="icon-button theme-toggle-btn" aria-label="Đổi giao diện sáng/tối" (click)="toggleTheme()" [title]="store.settings().theme === 'light' ? 'Chuyển sang nền tối' : 'Chuyển sang nền sáng'">
           <app-icon [name]="store.settings().theme === 'light' ? 'moon' : 'sun'"/>
         </button>
+
+        <!-- Notifications Dropdown -->
+        @if(store.user()){
+          <div class="notification-wrap">
+            <button
+              class="icon-button notification-trigger-btn"
+              [class.is-open]="notificationsOpen()"
+              (click)="toggleNotifications()"
+              aria-label="Thông báo"
+              [title]="store.unreadNotifications() > 0 ? store.unreadNotifications() + ' thông báo mới' : 'Thông báo'"
+            >
+              <app-icon name="bell"/>
+              @if(store.unreadNotifications() > 0){
+                <span class="notification-badge">{{store.unreadNotifications() > 99 ? '99+' : store.unreadNotifications()}}</span>
+              }
+            </button>
+
+            @if(notificationsOpen()){
+              <div class="dropdown-backdrop" (click)="notificationsOpen.set(false)"></div>
+              <div class="notification-dropdown glass-panel" (click)="$event.stopPropagation()">
+                <div class="notif-dropdown-header">
+                  <div class="notif-header-title">
+                    <strong>Thông báo</strong>
+                    @if(store.unreadNotifications() > 0){
+                      <span class="notif-count-pill">{{store.unreadNotifications()}} mới</span>
+                    }
+                  </div>
+                  @if(store.unreadNotifications() > 0){
+                    <button type="button" class="btn-mark-all-read" (click)="store.markAllNotificationsRead()">
+                      Đã đọc tất cả
+                    </button>
+                  }
+                </div>
+
+                <div class="notif-dropdown-list">
+                  @for(n of store.notifications(); track n.id){
+                    <a
+                      [routerLink]="n.type === 'welcome' || !n.mangaId || n.mangaId === '00000000-0000-0000-0000-000000000000' ? ['/'] : ['/truyen-tranh', n.mangaId]"
+                      class="notif-item"
+                      [class.unread]="!n.isRead"
+                      [class.welcome-notif]="n.type === 'welcome'"
+                      (click)="onNotificationClick(n)"
+                    >
+                      <div class="notif-item-avatar" [class.welcome-avatar]="n.type === 'welcome'">
+                        {{n.type === 'welcome' ? '🎉' : (n.actorName ? n.actorName.slice(0, 1).toUpperCase() : '💬')}}
+                      </div>
+                      <div class="notif-item-body">
+                        <p class="notif-message">{{n.message}}</p>
+                        <div class="notif-meta">
+                          <span class="notif-manga-title">{{n.type === 'welcome' ? 'Hệ thống DokiTruyen' : n.mangaTitle}}</span>
+                          <span class="notif-dot">•</span>
+                          <span class="notif-time">{{ago(n.createdAt)}} trước</span>
+                        </div>
+                      </div>
+                      @if(!n.isRead){
+                        <span class="notif-unread-dot" title="Chưa đọc"></span>
+                      }
+                    </a>
+                  }
+                  @if(!store.notifications().length){
+                    <div class="notif-empty">
+                      <app-icon name="bell"/>
+                      <p>Chưa có thông báo nào.</p>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+        }
 
         <!-- Account Button & Dropdown -->
         <div class="account-wrap">
@@ -328,15 +408,7 @@
 
 <div class="site-container" [class.reader-container]="reader()">
   @if(!reader()){
-    <nav class="main-nav desktop-nav-bar" aria-label="Điều hướng chính">
-      <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact:true}"><app-icon name="home"/> Trang chủ</a>
-      <a routerLink="/tim-truyen-nang-cao" routerLinkActive="active"><app-icon name="compass"/> Khám phá</a>
-      <button class="genre-nav-btn" [class.active]="genresOpen()" [attr.aria-expanded]="genresOpen()" (click)="genres()"><app-icon name="tag"/> Thể loại <app-icon name="chevronDown"/></button>
-      <span class="nav-divider" aria-hidden="true"></span>
-      <a routerLink="/theo-doi" routerLinkActive="active"><app-icon name="heart"/> Theo dõi</a>
-      <a routerLink="/lich-su" routerLinkActive="active"><app-icon name="clock"/> Lịch sử đọc</a>
-      <a class="nav-ranking" routerLink="/tim-truyen-nang-cao" [queryParams]="{sort:'rating'}"><app-icon name="trophy"/> Xếp hạng</a>
-    </nav>
+
 
     @if(genresOpen()){
       <div class="genre-dropdown glass-panel">
@@ -368,7 +440,25 @@
         <small class="footer-copy">© 2026 DokiTruyen · Website đọc truyện tranh online</small>
       </div>
       <div>
-        <h3>Về nội dung & bản quyền</h3>
+        <h3>KHÁM PHÁ TRUYỆN</h3>
+        <div class="footer-navigation">
+          <a routerLink="/">Trang chủ</a>
+          <a routerLink="/tim-truyen-nang-cao">Khám phá toàn bộ</a>
+          <a routerLink="/tim-truyen-nang-cao" [queryParams]="{sort:'latest'}">Truyện mới cập nhật</a>
+          <a routerLink="/tim-truyen-nang-cao" [queryParams]="{sort:'rating'}">Truyện được yêu thích</a>
+        </div>
+      </div>
+      <div>
+        <h3>THƯ VIỆN CỦA BẠN</h3>
+        <div class="footer-navigation">
+          <a routerLink="/theo-doi">Truyện theo dõi</a>
+          <a routerLink="/lich-su">Lịch sử đọc truyện</a>
+          <a routerLink="/tim-truyen-nang-cao" [queryParams]="{country:'ja'}">Manga Nhật Bản</a>
+          <a routerLink="/tim-truyen-nang-cao" [queryParams]="{country:'ko'}">Manhwa Hàn Quốc</a>
+        </div>
+      </div>
+      <div>
+        <h3>NỘI DUNG & BẢN QUYỀN</h3>
         <p>Nền tảng đọc truyện tranh trực tuyến phi lợi nhuận. Mọi thông tin và hình ảnh được tổng hợp từ các nguồn mở trên internet.</p>
         <div class="footer-links">
           <a href="https://mangadex.org" target="_blank" rel="noopener noreferrer">MangaDex ↗</a>

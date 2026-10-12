@@ -1,0 +1,203 @@
+/* AniDoki-inspired presentation; manga routes and reader controls are retained. */
+:root {
+  --bg: #101114;
+  --panel: #17171c;
+  --surface: #202027;
+  --surface-hover: #2b2933;
+  --border: #ffffff14;
+  --text: #f2f0e9;
+  --text-secondary: #cbc8d2;
+  --muted: #9e9ba6;
+  --accent: #b76e91;
+  --accent-hover: #cd88ab;
+  --accent-soft: #b76e911c;
+  --border-focus: #b76e9180;
+  --header: #17171bea;
+  --glass-bg: #17171cf5;
+  --font-main: 'Be Vietnam Pro', sans-serif;
+}
+:root[data-theme='light'] {
+  --bg: #f6f4f6;
+  --panel: #ffffff;
+  --surface: #eeeaef;
+  --surface-hover: #e6dfe8;
+  --border: #36213f1c;
+  --text: #25202b;
+  --text-secondary: #52485c;
+  --muted: #796e81;
+  --accent: #925372;
+  --accent-hover: #7c405e;
+  --accent-soft: #92537215;
+  --header: #fffffff0;
+  --glass-bg: #fffffff5;
+}
+.site-header {
+  position: sticky; top: 14px; height: 64px; margin: 14px 16px 0;
+  border: 1px solid var(--border); border-radius: 14px; background: var(--header);
+  box-shadow: 0 8px 30px #00000014;
+}
+.header-inner { max-width: 1680px; padding: 0 22px; gap: 20px; }
+.brand { gap: 8px; font-size: 23px; letter-spacing: -1px; flex-shrink: 0; }
+.brand-symbol { width: 40px; height: 40px; object-fit: contain; }
+.brand .brand-wordmark { font-weight: 800; }
+.brand .brand-wordmark > span { font-weight: 700; }
+.brand .brand-wordmark > .brand-period { color: var(--accent); }
+.header-navigation { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.header-navigation a, .header-navigation button {
+  display: inline-flex; align-items: center; gap: 5px; padding: 10px 9px;
+  font-size: 12px; font-weight: 600; color: var(--muted); border-radius: 7px;
+}
+.header-navigation a app-icon { display: none; }
+.header-navigation .genre-nav-btn > app-icon:first-child { display: none; }
+.header-navigation a.active, .header-navigation button.active { background: var(--accent-soft); color: var(--accent); }
+.header-navigation a:hover, .header-navigation button:hover { color: var(--text); background: var(--surface); }
+.header-navigation .nav-divider, .header-navigation .nav-ranking { display: none; }
+.header-search-wrap { flex: 1; width: auto; min-width: 160px; margin-left: auto; }
+.header-search { height: 42px; border: 1px solid var(--border); border-radius: 30px; background: var(--bg); }
+.header-search input { font-size: 12px; }
+.header-actions { gap: 8px; margin-left: 0; }
+.account-button { border-radius: 9px; box-shadow: none; }
+.account-avatar-pill { background: var(--accent-soft); border-color: #b76e9145; color: var(--accent); }
+.site-container { max-width: 1680px; padding: 0 32px 48px; overflow: visible; }
+.site-container > main { padding-top: 24px; }
+.site-container:has(app-home) > main { padding-top: 0; }
+.genre-dropdown { position: fixed; top: 90px; right: 32px; left: 32px; max-width: 1100px; margin: auto; z-index: 55; }
+.doki-spotlight {
+  position: relative; isolation: isolate; display: flex; align-items: center; overflow: hidden;
+  min-height: 610px; height: min(78vh, 760px); margin: -78px -32px 32px;
+  padding: 126px 48px 40px; color: #f2f0e9; background: #171923;
+}
+.spotlight-backdrop { position: absolute; inset: 0; z-index: -3; width: 100%; height: 100%; object-fit: cover; object-position: center 28%; opacity: .7; }
+.spotlight-shade { position: absolute; inset: 0; z-index: -2; background: linear-gradient(90deg, #101114f5 0%, #101114c9 38%, #10111438 74%), linear-gradient(0deg, #101114 0%, transparent 45%, #10111455 100%); }
+.spotlight-content { width: min(580px, 60%); position: relative; z-index: 1; }
+.spotlight-eyebrow { display: flex; align-items: center; gap: 10px; color: #dbaac2; font-size: 10px; font-weight: 700; letter-spacing: 2px; margin-bottom: 20px; }
+.spotlight-eyebrow > span { width: 6px; height: 6px; border-radius: 50%; background: #b76e91; box-shadow: 0 0 0 4px #b76e911a; }
+.spotlight-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; font-size: 12px; font-weight: 600; color: #c8c4d0; }
+.spotlight-status { border: 1px solid #ffffff26; border-radius: 4px; padding: 3px 8px; text-transform: uppercase; font-size: 10px; color: #dbaac2; }
+.spotlight-rating { display: flex; align-items: center; gap: 4px; color: #efd380; }
+.spotlight-rating app-icon { width: 13px; height: 13px; }
+.spotlight-content h1 { margin: 28px 0 22px; font-size: clamp(30px, 3.6vw, 54px); line-height: 1.2; letter-spacing: -1.5px; font-weight: 800; text-wrap: balance; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.spotlight-content p { margin: 0 0 30px; font-size: 14px; line-height: 1.9; color: #c8c4d0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.spotlight-actions { display: flex; gap: 10px; align-items: center; }
+.spotlight-read, .spotlight-detail, .spotlight-save { display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 0 22px; min-height: 48px; border-radius: 9px; font-size: 13px; font-weight: 700; color: #fff; border: 1px solid #ffffff2a; background: #ffffff0d; backdrop-filter: blur(10px); }
+.spotlight-read { background: #78425f; border-color: #b76e9180; }
+.spotlight-read:hover { background: #985676; color: #fff; }
+.spotlight-detail:hover, .spotlight-save:hover { background: #ffffff1c; color: #fff; }
+.spotlight-actions app-icon { width: 18px; height: 18px; }
+.spotlight-save { padding: 0; width: 48px; }
+.spotlight-save.saved { color: #e6a7c7; background: #b76e9133; }
+.spotlight-controls { display: flex; align-items: center; gap: 20px; margin-top: 36px; }
+.spotlight-pause { border: 1px solid #ffffff22; color: #ccc9d3; border-radius: 50%; width: 36px; height: 36px; font-size: 15px; }
+.spotlight-dots { display: flex; gap: 8px; }
+.spotlight-dots button { position: relative; width: 26px; height: 28px; padding: 0; }
+.spotlight-dots button::after { content: ''; position: absolute; height: 3px; left: 0; right: 0; top: 12px; background: #ffffff35; transition: background .2s; }
+.spotlight-dots button.active::after { background: #b76e91; }
+app-home .columns { display: block; }
+app-home .list-meta-bar { border: 0; padding: 0; margin-bottom: 18px; background: transparent; }
+.section-title { margin-bottom: 24px; align-items: center; }
+.section-title h1, .section-title h2 { font-size: 22px; font-weight: 700; letter-spacing: -.7px; }
+.section-subtitle { margin: 6px 0 0; font-size: 12px; font-weight: 400; color: var(--muted); }
+.view-all-btn, .view-all-manhwa-link { border: 0; background: transparent; color: var(--accent); font-size: 12px; box-shadow: none; }
+.manga-grid, .search-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 28px 18px; }
+.manga-card { border: 0; background: transparent; padding: 0; box-shadow: none; }
+.cover-link { aspect-ratio: 2 / 3; border-radius: 10px; border: 1px solid var(--border); position: relative; }
+.cover-link img { transition: transform .3s; }
+.cover-link:hover img { transform: scale(1.04); }
+.cover-link:hover { transform: none; }
+.cover-rating { position: absolute; top: 9px; left: 9px; display: flex; gap: 3px; align-items: center; background: #14141de8; color: #efd380; border: 1px solid #ffffff12; border-radius: 5px; padding: 4px 6px; font-size: 10px; font-weight: 700; }
+.cover-rating app-icon { width: 10px; height: 10px; }
+.cover-chapter { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); max-width: 90%; padding: 4px 8px; background: #101114ed; color: #f2f0e9; border-radius: 5px 5px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.cover-read { position: absolute; bottom: 34px; right: 12px; display: grid; place-items: center; background: #b76e91; color: #fff; width: 42px; height: 42px; border-radius: 50%; opacity: 0; transform: translateY(8px); transition: opacity .2s, transform .2s; }
+.cover-link:hover .cover-read, .cover-link:focus-visible .cover-read { opacity: 1; transform: none; }
+.manga-card-info { padding: 10px 2px 0; }
+.manga-card-info .card-stats { display: none; }
+.manga-card-info h3 { font-size: 13px; font-weight: 600; line-height: 1.55; }
+.manga-card-info h3 a { min-height: 0; }
+.card-origin { margin: 6px 0 0; color: var(--muted); font-size: 10px; }
+.mini-chapters { border: 0; padding: 7px 2px 0; }
+.mini-chap-item { font-size: 10px; }
+.mini-chap-item a { font-size: 10px; max-width: 70%; }
+.mini-chap-item:not(:first-child) { display: none; }
+.cover-link .age-label { left: auto; right: 8px; }
+.recommendations { margin-top: 48px; padding: 0; border: 0; background: transparent; border-radius: 0; }
+.featured-carousel-track { gap: 18px; padding-bottom: 6px; }
+.featured-card { flex: 0 0 calc((100% - 90px) / 6); height: auto; aspect-ratio: 2 / 3; border-radius: 10px; }
+.featured-overlay { background: linear-gradient(0deg, #101114f5, #10111400 85%); }
+.featured-overlay .featured-badge { color: #efd380; }
+.home-community { margin-top: 48px; }
+.home-community .sidebar { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; align-items: start; }
+.sidebar-section { border-radius: 12px; border: 1px solid var(--border); background: var(--panel); }
+.primary { background: var(--accent); }
+.site-footer { background: var(--bg); padding-top: 42px; }
+.footer-inner { max-width: 1680px; padding: 0 32px; gap: 32px; grid-template-columns: 1.6fr 1fr 1fr 1fr; }
+.footer-inner h3 { font-size: 11px; letter-spacing: 1px; margin-bottom: 18px; }
+.footer-navigation { display: flex; flex-direction: column; gap: 12px; font-size: 12px; color: var(--muted); }
+.footer-inner p { color: var(--muted); font-size: 12px; line-height: 1.9; }
+.footer-copy { color: var(--muted); }
+.mobile-bottom-dock { background: var(--header); }
+.mobile-bottom-dock .dock-item.active { color: var(--accent); }
+@media (min-width: 1600px) { .manga-grid, .search-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+@media (max-width: 1200px) {
+  .header-inner { padding: 0 16px; gap: 12px; }
+  .brand { font-size: 20px; }
+  .brand-symbol { width: 34px; height: 34px; }
+  .header-navigation a, .header-navigation button { padding: 9px 6px; font-size: 11px; }
+  .header-navigation { gap: 2px; }
+  .header-actions .theme-toggle-btn { display: none; }
+}
+@media (max-width: 1024px) {
+  .header-navigation { display: none; }
+  .header-actions .theme-toggle-btn { display: inline-flex; }
+  .mobile-menu-btn { display: inline-flex; }
+  .spotlight-content { width: min(580px, 75%); }
+  .manga-grid, .search-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .featured-card { flex-basis: calc((100% - 54px) / 4); }
+  .home-community .sidebar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .footer-inner { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 768px) {
+  .site-header { margin: 8px 8px 0; top: 8px; height: 56px; border-radius: 11px; }
+  .header-inner { padding: 0 10px; gap: 8px; }
+  .brand { font-size: 20px; }
+  .brand-symbol { width: 32px; height: 32px; }
+  .header-search-wrap { display: none; }
+  .header-actions { margin-left: auto; gap: 4px; }
+  .header-actions .theme-toggle-btn { display: none; }
+  .site-container { padding: 0 16px 28px; }
+  .genre-dropdown { left: 16px; right: 16px; top: 74px; }
+  .doki-spotlight { margin: -64px -16px 26px; height: auto; min-height: 580px; padding: 150px 24px 30px; align-items: flex-end; }
+  .spotlight-backdrop { object-position: 65% 25%; }
+  .spotlight-shade { background: linear-gradient(0deg, #101114 0%, #101114c9 45%, #10111445 100%); }
+  .spotlight-content { width: 100%; }
+  .spotlight-content h1 { font-size: 32px; line-height: 1.22; letter-spacing: -.8px; margin: 22px 0 18px; }
+  .spotlight-content p { font-size: 12px; line-height: 1.8; margin-bottom: 22px; }
+  .spotlight-meta { gap: 12px; font-size: 10px; }
+  .spotlight-status { font-size: 9px; }
+  .spotlight-eyebrow { font-size: 9px; letter-spacing: 1.4px; }
+  .spotlight-read, .spotlight-detail { min-height: 44px; padding: 0 16px; font-size: 12px; }
+  .spotlight-save { min-height: 44px; width: 44px; }
+  .spotlight-controls { gap: 16px; margin-top: 28px; }
+  .spotlight-dots { gap: 6px; }
+  .spotlight-dots button { width: 23px; }
+  .section-title { margin-bottom: 18px; gap: 10px; }
+  .section-title h2 { font-size: 20px; }
+  .section-subtitle { font-size: 11px; }
+  .manga-grid, .search-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px 12px; }
+  .cover-rating { top: 6px; left: 6px; padding: 3px 5px; font-size: 9px; }
+  .manga-card-info h3 { font-size: 12px; }
+  .featured-card { flex-basis: 150px; }
+  .recommendations, .home-community { margin-top: 32px; }
+  .home-community .sidebar { display: grid; grid-template-columns: 1fr; gap: 16px; }
+  .sidebar-section { margin-bottom: 0; }
+  .footer-inner { padding: 0 20px; gap: 24px; }
+}
+@media (max-width: 480px) {
+  .manga-grid, .search-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 14px; }
+  .brand { font-size: 18px; gap: 5px; }
+  .brand-symbol { width: 30px; height: 30px; }
+  .spotlight-actions { gap: 8px; }
+  .spotlight-content h1 { font-size: 29px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cover-link img, .cover-read, .spotlight-dots button::after { transition: none; }
+}

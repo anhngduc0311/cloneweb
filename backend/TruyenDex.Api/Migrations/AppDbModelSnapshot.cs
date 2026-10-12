@@ -193,10 +193,15 @@ namespace TruyenDex.Api.Migrations
                     b.Property<Guid>("MangaId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("ParentId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ParentId");
 
                     b.HasIndex("UserId");
 
@@ -330,6 +335,53 @@ namespace TruyenDex.Api.Migrations
                     b.HasIndex("UpdatedAt");
 
                     b.ToTable("Mangas");
+                });
+
+            modelBuilder.Entity("TruyenDex.Api.Notification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ActorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ActorName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("CommentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsRead")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("MangaId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("MangaTitle")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "CreatedAt");
+
+                    b.ToTable("Notifications");
                 });
 
             modelBuilder.Entity("TruyenDex.Api.Rating", b =>
@@ -492,6 +544,11 @@ namespace TruyenDex.Api.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("TruyenDex.Api.Comment", "Parent")
+                        .WithMany()
+                        .HasForeignKey("ParentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("TruyenDex.Api.AppUser", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
@@ -499,6 +556,8 @@ namespace TruyenDex.Api.Migrations
                         .IsRequired();
 
                     b.Navigation("Manga");
+
+                    b.Navigation("Parent");
 
                     b.Navigation("User");
                 });
@@ -545,6 +604,17 @@ namespace TruyenDex.Api.Migrations
                     b.Navigation("Chapter");
 
                     b.Navigation("Manga");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("TruyenDex.Api.Notification", b =>
+                {
+                    b.HasOne("TruyenDex.Api.AppUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("User");
                 });
