@@ -104,6 +104,34 @@ var registeredChapters = await aliasSource.GetChapters(aliasMangaId);
 Check(registeredChapters?.Items.Count == 1, "Matched alias must remain registered for later chapter requests");
 Console.WriteLine("PASS: later title aliases, unrelated search results, verified matching, persistent chapter mapping");
 
+using var readerCache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 1000 });
+using var readerHandler = new FakeHandler(uri => Task.FromResult("""
+<div class="page-chapter"><img data-original="https://s135.hinhhinh.com/19852/1/0.jpg?gt=hdfgdfg"></div>
+<div class="page-chapter"><img data-cdn="//s136.hinhhinh.com/19852/1/0.jpg?gt=changed"></div>
+<div class="page-chapter"><img src="https://s135.hinhhinh.com/19852/1/1.jpg"></div>
+<div class="page-chapter"><img src="https://s135.hinhhinh.com/19852/2/0.jpg"></div>
+<div class="page-chapter"><img src="https://s135.hinhhinh.com/99999/1/0.jpg"></div>
+<div class="page-chapter"><img src="https://other.example/19852/1/0.jpg"></div>
+<div class="page-chapter"><img src="https://hinhhinh.com.other.example/19852/1/0.jpg"></div>
+"""));
+using var readerHttp = new HttpClient(readerHandler);
+var readerSource = new TruyenGg(readerHttp, readerCache);
+var readerChapterId = Guid.NewGuid();
+readerSource.RegisterChapter(readerChapterId, "/truyen-tranh/banner-regression/chapter-1", Guid.Empty);
+var reader = await readerSource.GetReader(readerChapterId);
+var expectedPages = new[]
+{
+    "https://s135.hinhhinh.com/19852/1/1.jpg",
+    "https://s135.hinhhinh.com/19852/2/0.jpg",
+    "https://s135.hinhhinh.com/99999/1/0.jpg",
+    "https://other.example/19852/1/0.jpg",
+    "https://hinhhinh.com.other.example/19852/1/0.jpg"
+}.Select(url => "/api/catalog/image-proxy?url=" + Uri.EscapeDataString(url)).ToArray();
+Check(reader != null && reader.Pages.SequenceEqual(expectedPages),
+    "Reader must skip the confirmed banner across CDN hosts and query strings, preserving real pages in order");
+Check(reader!.DataSaverPages.SequenceEqual(expectedPages), "Data saver must also skip banner pages");
+Console.WriteLine("PASS: reader banner filtering, CDN variants, preserved page zero and page order, data saver");
+
 sealed class AliasHandler : HttpMessageHandler
 {
     public List<string> Queries { get; } = [];

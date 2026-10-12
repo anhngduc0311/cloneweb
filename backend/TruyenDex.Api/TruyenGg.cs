@@ -16,6 +16,16 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
     private static readonly ConcurrentDictionary<Guid, string> ChapterUrlMap = new();
     private static readonly ConcurrentDictionary<Guid, Guid> ChapterMangaMap = new();
 
+    private static bool IsAdvertisementPage(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
+
+        // Confirmed standalone banner; other images named 0.jpg may be real pages.
+        return (uri.Host.Equals("hinhhinh.com", StringComparison.OrdinalIgnoreCase)
+                || uri.Host.EndsWith(".hinhhinh.com", StringComparison.OrdinalIgnoreCase))
+            && uri.AbsolutePath.Equals("/19852/1/0.jpg", StringComparison.OrdinalIgnoreCase);
+    }
+
     public static Guid CreateGuid(string key)
     {
         using var md5 = MD5.Create();
@@ -724,7 +734,7 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
                 var src = srcMatch.Groups[1].Value;
                 if (src.StartsWith("//")) src = "https:" + src;
                 else if (src.StartsWith("/")) src = BaseUrl + src;
-                pages.Add(src);
+                if (!IsAdvertisementPage(src)) pages.Add(src);
             }
         }
 

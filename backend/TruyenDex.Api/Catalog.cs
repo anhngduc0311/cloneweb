@@ -1238,7 +1238,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
     public async Task<ReaderData> Read(Guid id)
     {
-        var cacheKey = $"catalog:reader:v7:{id}";
+        var cacheKey = $"catalog:reader:v8:{id}";
         var cachedReader = await CacheGet<ReaderData>(cacheKey);
         if (cachedReader != null) return cachedReader;
 
