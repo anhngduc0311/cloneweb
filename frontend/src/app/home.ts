@@ -311,7 +311,7 @@ export class Home implements OnDestroy {
       let restored = false;
       if (savedMangaId) {
         const targetEl = document.getElementById('manga-card-' + savedMangaId) ||
-                         document.querySelector(`[data-manga-id="${savedMangaId}"]`);
+          document.querySelector(`[data-manga-id="${savedMangaId}"]`);
         if (targetEl) {
           const rect = targetEl.getBoundingClientRect();
           const targetY = window.scrollY + rect.top - 80;
@@ -355,7 +355,7 @@ export class Home implements OnDestroy {
       if (!this.autoPaused() && !this.selectingSpotlight() && this.spotlightPool().length > 1 && !document.hidden) {
         this.spotlightIndex.update(i => (i + 1) % this.spotlightPool().length);
       }
-    }, 6500);
+    }, 2500);
   }
 
   stopAutoSlide() {
