@@ -8,7 +8,7 @@
 
       <!-- Brand Logo -->
       <a class="brand" routerLink="/" aria-label="DokiTruyen - Trang chủ">
-        <img class="brand-symbol" src="/brand-mark.svg" width="44" height="44" alt="" aria-hidden="true"><span class="brand-wordmark">doki<span>truyen</span><span class="brand-period">.</span></span>
+        <img class="brand-symbol" src="/brand-mark.png" width="44" height="44" alt="" aria-hidden="true"><span class="brand-wordmark">doki<span>truyen</span><span class="brand-period">.</span></span>
       </a>
 
       <!-- Desktop / Tablet Search Wrap -->
@@ -111,9 +111,6 @@
           <app-icon [name]="store.settings().theme === 'light' ? 'moon' : 'sun'"/>
         </button>
 
-        <!-- Settings Button -->
-        <button class="icon-button desktop-only-btn" aria-label="Tùy chỉnh" title="Tùy chỉnh đọc truyện" (click)="openSettings()"><app-icon name="settings"/></button>
-
         <!-- Account Button & Dropdown -->
         <div class="account-wrap">
           <button class="account-button" [class.is-open]="account()" (click)="account.set(!account())" aria-label="Tài khoản">
@@ -143,7 +140,6 @@
                 <a routerLink="/theo-doi" (click)="account.set(false)"><app-icon name="heart"/> Truyện theo dõi ({{store.follows().length}})</a>
                 <a routerLink="/lich-su" (click)="account.set(false)"><app-icon name="clock"/> Lịch sử đọc ({{store.history().length}})</a>
                 <a routerLink="/doi-mat-khau" (click)="account.set(false)"><app-icon name="lock"/> Đổi mật khẩu</a>
-                <button (click)="openSettings();account.set(false)"><app-icon name="settings"/> Tùy chỉnh đọc truyện</button>
                 @if(store.user()?.role === 'admin' || store.user()?.role === 'superadmin' || store.user()?.role === 'editor' || store.user()?.role === 'translator'){
                   <div class="menu-divider"></div>
                   <a routerLink="/admin" class="admin-menu-link" (click)="account.set(false)">
@@ -157,8 +153,6 @@
                   <p>Đăng nhập để đồng bộ truyện theo dõi và lịch sử đọc.</p>
                   <a routerLink="/dang-nhap" class="primary btn-login-link" (click)="account.set(false)"><app-icon name="user"/> Đăng nhập</a>
                   <a routerLink="/dang-ky" class="secondary btn-reg-link" (click)="account.set(false)">Đăng ký tài khoản</a>
-                  <div class="menu-divider"></div>
-                  <button (click)="openSettings();account.set(false)"><app-icon name="settings"/> Tùy chỉnh đọc truyện</button>
                 </div>
               }
             </div>
@@ -244,7 +238,7 @@
         <!-- Drawer Header -->
         <div class="drawer-header">
           <a class="brand" routerLink="/" aria-label="DokiTruyen - Trang chủ" (click)="menu.set(false)">
-            <img class="brand-symbol" src="/brand-mark.svg" width="44" height="44" alt="" aria-hidden="true"><span class="brand-wordmark">doki<span>truyen</span><span class="brand-period">.</span></span>
+            <img class="brand-symbol" src="/brand-mark.png" width="44" height="44" alt="" aria-hidden="true"><span class="brand-wordmark">doki<span>truyen</span><span class="brand-period">.</span></span>
           </a>
           <button class="icon-button btn-close-drawer" aria-label="Đóng menu" (click)="menu.set(false)">
             <app-icon name="close"/>
@@ -321,9 +315,6 @@
             <span class="btn-left"><app-icon [name]="store.settings().theme === 'light' ? 'moon' : 'sun'"/> <span>Giao diện {{store.settings().theme === 'light' ? 'Sáng' : 'Tối'}}</span></span>
             <span class="theme-pill">{{store.settings().theme === 'light' ? 'Sáng' : 'Tối'}}</span>
           </button>
-          <button (click)="openSettings();menu.set(false)">
-            <app-icon name="settings"/> <span>Tùy chỉnh đọc truyện</span>
-          </button>
           @if(store.user()){
             <button class="drawer-logout-btn" (click)="store.logout();menu.set(false)">
               <app-icon name="logout"/> <span>Đăng xuất tài khoản</span>
@@ -372,7 +363,7 @@
   <footer class="site-footer">
     <div class="footer-inner">
       <div>
-        <a class="brand" routerLink="/" aria-label="DokiTruyen - Trang chủ"><img class="brand-symbol" src="/brand-mark.svg" width="44" height="44" alt="" aria-hidden="true"><span class="brand-wordmark">doki<span>truyen</span><span class="brand-period">.</span></span></a>
+        <a class="brand" routerLink="/" aria-label="DokiTruyen - Trang chủ"><img class="brand-symbol" src="/brand-mark.png" width="44" height="44" alt="" aria-hidden="true"><span class="brand-wordmark">doki<span>truyen</span><span class="brand-period">.</span></span></a>
         <p><strong>DokiTruyen (Doki Truyện - dokitruyen.com)</strong> — Trang đọc truyện tranh online miễn phí cập nhật mới nhất mỗi ngày. Đọc Manga, Manhwa, Manhua tiếng Việt bản dịch chất lượng cao, hình ảnh sắc nét và tối ưu mượt mà trên điện thoại và máy tính.</p>
         <small class="footer-copy">© 2026 DokiTruyen · Website đọc truyện tranh online</small>
       </div>
@@ -381,7 +372,6 @@
         <p>Nền tảng đọc truyện tranh trực tuyến phi lợi nhuận. Mọi thông tin và hình ảnh được tổng hợp từ các nguồn mở trên internet.</p>
         <div class="footer-links">
           <a href="https://mangadex.org" target="_blank" rel="noopener noreferrer">MangaDex ↗</a>
-          <button type="button" class="text-button" (click)="openSettings()">Tùy chỉnh đọc</button>
         </div>
       </div>
     </div>
@@ -427,58 +417,5 @@
     <app-icon name="info"/>
     <span>{{store.toast()}}</span>
     <button aria-label="Đóng thông báo" (click)="store.toast.set('')">×</button>
-  </div>
-}
-
-@if(settingsOpen()){
-  <div class="modal-backdrop" (click)="settingsOpen.set(false)">
-    <section class="settings-modal glass-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title" (click)="$event.stopPropagation()">
-      <div class="section-title">
-        <h2 id="settings-title"><app-icon name="settings"/> Tùy chỉnh đọc truyện</h2>
-        <button class="icon-button" aria-label="Đóng tùy chỉnh" (click)="settingsOpen.set(false)"><app-icon name="close"/></button>
-      </div>
-      <p class="muted">Những tùy chỉnh này được lưu trên thiết bị của bạn.</p>
-      
-      <div class="settings-form">
-        <label>
-          <span>Ngôn ngữ bản dịch ưu tiên</span>
-          <select [(ngModel)]="draft.language">
-            <option value="vi">Tiếng Việt</option>
-            <option value="en">Tiếng Anh</option>
-          </select>
-        </label>
-        
-        <label>
-          <span>Chất lượng ảnh</span>
-          <select [(ngModel)]="draft.dataSaver">
-            <option [ngValue]="false">Ảnh gốc chất lượng cao (Nét căng)</option>
-            <option [ngValue]="true">Tiết kiệm 3G/4G (Dung lượng nhẹ)</option>
-          </select>
-        </label>
-        
-        <label>
-          <span>Chiều rộng ảnh đọc tối đa (PC / Máy tính bảng)</span>
-          <select [(ngModel)]="draft.width">
-            <option [ngValue]="700">700 px (Gọn gàng)</option>
-            <option [ngValue]="900">900 px (Tiêu chuẩn)</option>
-            <option [ngValue]="1200">1200 px (Màn hình lớn)</option>
-            <option [ngValue]="0">Tràn màn hình (100%)</option>
-          </select>
-        </label>
-        
-        <label>
-          <span>Giao diện màu sắc</span>
-          <select [(ngModel)]="draft.theme">
-            <option value="dark">Nền tối (Dễ chịu mắt về đêm)</option>
-            <option value="light">Nền sáng</option>
-          </select>
-        </label>
-      </div>
-
-      <div class="modal-actions">
-        <button class="secondary" (click)="draft={language:'vi',dataSaver:false,width:900,theme:'dark'}">Đặt lại mặc định</button>
-        <button class="primary" (click)="saveSettings()"><app-icon name="check"/> Lưu tùy chỉnh</button>
-      </div>
-    </section>
   </div>
 }

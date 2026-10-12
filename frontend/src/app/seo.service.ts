@@ -14,7 +14,7 @@ export interface SeoConfig {
 }
 
 const BASE_URL = 'https://dokitruyen.com';
-const DEFAULT_IMAGE = `${BASE_URL}/brand-mark.svg`;
+const DEFAULT_IMAGE = `${BASE_URL}/brand-mark.png`;
 
 @Injectable({ providedIn: 'root' })
 export class SeoService {

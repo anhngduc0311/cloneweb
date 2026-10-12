@@ -2,7 +2,7 @@ import { Component, signal, inject, HostListener, ElementRef, OnInit } from '@an
 import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { Icon } from './ui';
-import { Api, Store, Settings, Manga, statuses } from './core';
+import { Api, Store, Manga, statuses } from './core';
 
 @Component({
   selector: 'app-root',
@@ -19,11 +19,9 @@ export class App implements OnInit {
   query = '';
   menu = signal(false);
   account = signal(false);
-  settingsOpen = signal(false);
   genresOpen = signal(false);
   mobileSearchOpen = signal(false);
   tags = signal<{ id: string; name: string }[]>([]);
-  draft: Settings = { ...this.store.settings() };
   reader = signal(false);
   isDockHidden = signal(false);
   private lastScrollY = 0;
@@ -202,17 +200,6 @@ export class App implements OnInit {
     }
   }
 
-  openSettings() {
-    this.draft = { ...this.store.settings() };
-    this.settingsOpen.set(true);
-  }
-
-  saveSettings() {
-    this.store.saveSettings(this.draft);
-    this.applyTheme(this.draft.theme);
-    this.settingsOpen.set(false);
-  }
-
   async genres() {
     this.genresOpen.update(v => !v);
     if (!this.tags().length) {
@@ -241,7 +228,6 @@ export class App implements OnInit {
 
   @HostListener('window:keydown.escape')
   escape() {
-    this.settingsOpen.set(false);
     this.menu.set(false);
     this.account.set(false);
     this.genresOpen.set(false);
