@@ -79,6 +79,53 @@ await fallbackCatalog.Get("/manga?limit=1");
 Check(fallbackHandler.Requests.Select(x => x.Host).SequenceEqual(new[] { "api.mangadex.org", "api-proxy.truyendex.cc" }), "Proxy fallback must remain available");
 Console.WriteLine("PASS: proxy fallback on direct-source failure");
 
+using var aliasCache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 1000 });
+using var aliasHandler = new AliasHandler();
+using var aliasHttp = new HttpClient(aliasHandler);
+var aliasSource = new TruyenGg(aliasHttp, aliasCache);
+var aliasMangaId = Guid.NewGuid();
+var aliasChapters = await aliasSource.FindMatchingChapters(aliasMangaId, "Tên tiếng Việt kiểm thử",
+    "その着せ替え人形は恋をする / Sono Bisque Doll wa Koi o Suru / My Dress-Up Darling / Unused alias");
+Check(aliasChapters is { Count: 1 } && aliasChapters[0].Number == 111 && aliasChapters[0].MangaId == aliasMangaId,
+    "Chapter fallback must search later aliases and preserve the original manga ID");
+Check(aliasHandler.Queries.SequenceEqual(new[] { "Tên tiếng Việt kiểm thử", "Sono Bisque Doll wa Koi o Suru", "My Dress-Up Darling" }),
+    "Fallback must continue past unrelated results, skip unsupported scripts, and stop at a verified match");
+var registeredChapters = await aliasSource.GetChapters(aliasMangaId);
+Check(registeredChapters?.Items.Count == 1, "Matched alias must remain registered for later chapter requests");
+Console.WriteLine("PASS: later title aliases, unrelated search results, verified matching, persistent chapter mapping");
+
+sealed class AliasHandler : HttpMessageHandler
+{
+    public List<string> Queries { get; } = [];
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+    {
+        string html;
+        if (request.Method == HttpMethod.Post)
+        {
+            var body = await request.Content!.ReadAsStringAsync(ct);
+            var query = WebUtility.UrlDecode(body["search=".Length..]);
+            Queries.Add(query);
+            html = query switch
+            {
+                "Tên tiếng Việt kiểm thử" => "<li><a href=\"https://truyenggvn.com/truyen-tranh/unrelated\"><p class=\"name\">Unrelated story</p></a></li>",
+                "Sono Bisque Doll wa Koi o Suru" => "<li><div class=\"no_result\">No results</div></li>",
+                "My Dress-Up Darling" => "<li><a href=\"https://truyenggvn.com/truyen-tranh/alias-regression-test\"><p class=\"name\">My Dress-Up Darling</p></a></li>",
+                _ => throw new Exception("Unexpected alias query: " + query)
+            };
+        }
+        else
+        {
+            CheckPath(request.RequestUri!.AbsolutePath);
+            html = "<div class=\"works-chapter-item\"><div class=\"col-md-10 name-chap\"><a href=\"/truyen-tranh/alias-regression-test/chapter-111\">Chương 111</a></div><div class=\"col-md-2 time-chap\">1 ngày trước</div>";
+        }
+        return new(HttpStatusCode.OK) { Content = new StringContent(html) };
+    }
+    private static void CheckPath(string path)
+    {
+        if (path != "/truyen-tranh/alias-regression-test") throw new Exception("Unexpected story: " + path);
+    }
+}
+
 sealed class FakeHandler(Func<Uri, Task<string>> respond) : HttpMessageHandler
 {
     public ConcurrentQueue<Uri> Requests { get; } = new();

@@ -645,17 +645,21 @@ public class TruyenGg(HttpClient http, IMemoryCache cache, IConnectionMultiplexe
     {
         try
         {
-            var searchResults = await Search(title);
-            if (searchResults.Count == 0 && !string.IsNullOrWhiteSpace(altTitles))
+            var queries = new[] { title }
+                .Concat((altTitles ?? "").Split([';', '/', '|', '\n'], StringSplitOptions.RemoveEmptyEntries))
+                .Select(name => name.Trim())
+                .Where(name => NormalizeTitle(name).Length >= 3)
+                .DistinctBy(NormalizeTitle)
+                .Take(8);
+
+            MangaCard? matched = null;
+            foreach (var query in queries)
             {
-                var firstAlt = altTitles.Split([';', '/', '|', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
-                if (!string.IsNullOrWhiteSpace(firstAlt))
-                {
-                    searchResults = await Search(firstAlt);
-                }
+                var searchResults = await Search(query);
+                matched = searchResults.FirstOrDefault(gg => IsSameManga(title, altTitles, gg.Title, gg.AlternativeTitle));
+                if (matched != null) break;
             }
 
-            var matched = searchResults.FirstOrDefault(gg => IsSameManga(title, altTitles, gg.Title, gg.AlternativeTitle));
             if (matched != null)
             {
                 var slug = await ResolveSlug(matched.Id);

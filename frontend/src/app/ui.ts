@@ -1,4 +1,4 @@
-import { Component, input, signal, inject } from '@angular/core';
+import { Component, computed, input, signal, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Api, Manga, compact, ago } from './core';
 
@@ -74,7 +74,7 @@ export class Icon {
   selector: 'app-card',
   imports: [RouterLink, Icon],
   template: `
-<article class="manga-card" [id]="'manga-card-' + manga().id" [attr.data-manga-id]="manga().id">
+<article class="manga-card" [id]="idPrefix() + 'manga-card-' + manga().id" [attr.data-manga-id]="manga().id">
   <a class="cover-link" 
      [routerLink]="['/truyen-tranh', manga().id]" 
      (click)="savePosition()"
@@ -97,10 +97,10 @@ export class Icon {
     <p class="card-origin">{{manga().country === 'ko' ? 'Manhwa' : manga().country === 'cn' ? 'Manhua' : 'Manga'}} · {{manga().year || 'DokiTruyen'}}</p>
   </div>
   <div class="mini-chapters">
-    @for(c of manga().chapters.slice(0, 3); track c.id){
+    @for(c of recentChapters(); track c.id){
       <div class="mini-chap-item">
         <a [routerLink]="['/chuong', c.id]" (click)="savePosition()" [title]="c.title">{{c.title}}</a>
-        <time>{{ago(c.publishedAt)}}</time>
+        <time>{{c.relativeTime}}</time>
       </div>
     }
     @if(!manga().chapters.length){
@@ -114,6 +114,11 @@ export class Icon {
 export class MangaCardComponent {
   api = inject(Api);
   manga = input.required<Manga>();
+  idPrefix = input('');
+  recentChapters = computed(() => this.manga().chapters.slice(0, 3).map(chapter => ({
+    ...chapter,
+    relativeTime: ago(chapter.publishedAt)
+  })));
   loaded = signal(false);
   compact = compact;
   ago = ago;

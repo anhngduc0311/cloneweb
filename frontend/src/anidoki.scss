@@ -125,6 +125,7 @@ app-home .list-meta-bar { border: 0; padding: 0; margin-bottom: 18px; background
 .featured-overlay { background: linear-gradient(0deg, #101114f5, #10111400 85%); }
 .featured-overlay .featured-badge { color: #efd380; }
 .home-community { margin-top: 48px; }
+.home-trending { margin-top: 48px; }
 .home-community .sidebar { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; align-items: start; }
 .sidebar-section { border-radius: 12px; border: 1px solid var(--border); background: var(--panel); }
 .primary { background: var(--accent); }
@@ -186,7 +187,7 @@ app-home .list-meta-bar { border: 0; padding: 0; margin-bottom: 18px; background
   .cover-rating { top: 6px; left: 6px; padding: 3px 5px; font-size: 9px; }
   .manga-card-info h3 { font-size: 12px; }
   .featured-card { flex-basis: 150px; }
-  .recommendations, .home-community { margin-top: 32px; }
+  .recommendations, .home-community, .home-trending { margin-top: 32px; }
   .home-community .sidebar { display: grid; grid-template-columns: 1fr; gap: 16px; }
   .sidebar-section { margin-bottom: 0; }
   .footer-inner { padding: 0 20px; gap: 24px; }
@@ -197,6 +198,7 @@ app-home .list-meta-bar { border: 0; padding: 0; margin-bottom: 18px; background
   .brand-symbol { width: 30px; height: 30px; }
   .spotlight-actions { gap: 8px; }
   .spotlight-content h1 { font-size: 29px; }
+  .footer-inner { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
   .cover-link img, .cover-read, .spotlight-dots button::after { transition: none; }

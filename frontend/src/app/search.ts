@@ -158,8 +158,8 @@ import { Icon, MangaCardComponent, Pagination } from './ui';
       </div>
     }
 
-    @if(total() > 24){
-      <app-pagination [page]="page()" [total]="total()" [size]="24" [change]="goPage" [hover]="prefetchPage"/>
+    @if(total() > pageSize()){
+      <app-pagination [page]="page()" [total]="total()" [size]="pageSize()" [change]="goPage" [hover]="prefetchPage"/>
     }
   }
 </div>`
@@ -175,6 +175,7 @@ export class Search {
   items = signal<Manga[]>([]);
   total = signal(0);
   page = signal(1);
+  pageSize = signal(24);
   loading = signal(true);
   error = signal('');
   expanded = true;
@@ -192,6 +193,7 @@ export class Search {
     sort: 'latest'
   });
   form = this.defaults();
+  private appliedForm = { ...this.form };
 
   constructor() {
     void this.api.request<{ id: string; name: string }[]>('/catalog/tags').then(r => this.tags.set(r)).catch(() => {});
@@ -200,6 +202,7 @@ export class Search {
       for (const key of Object.keys(this.form) as (keyof typeof this.form)[]) {
         if (p.has(key)) this.form[key] = p.get(key)!;
       }
+      this.appliedForm = { ...this.form };
       this.page.set(Math.max(1, Number(p.get('page')) || 1));
       const genreObj = this.tags().find(t => t.id === this.form.genre);
       this.seo.setSearchSeo({
@@ -240,17 +243,33 @@ export class Search {
 
   reset() {
     this.api.clearCache('/catalog/search');
+    this.api.clearCache('/catalog/home');
     sessionStorage.removeItem('search_scroll_y');
     sessionStorage.removeItem('search_manga_id');
     sessionStorage.removeItem('last_scroll_y');
     sessionStorage.removeItem('last_manga_id');
     this.form = this.defaults();
-    void this.router.navigate(['/tim-truyen-nang-cao']);
+    void this.router.navigate(['/tim-truyen-nang-cao']).then(navigated => {
+      // Reset must refresh the shared feed even when already on the default URL.
+      if (!navigated) {
+        this.appliedForm = { ...this.form };
+        void this.load();
+      }
+    });
+  }
+
+  private usesHomeFeed() {
+    const f = this.appliedForm;
+    return f.sort === 'latest' && f.language === 'vi'
+      && (!f.country.trim() || f.country === 'ja')
+      && [f.q, f.author, f.genre, f.status, f.demographic, f.year].every(value => !String(value).trim());
   }
 
   getPath(p: number) {
+    // Reuse Home's exact feed and cache key so chapter dates and source order match.
+    if (this.usesHomeFeed()) return '/catalog/home?page=' + p;
     return '/catalog/search?' + this.api.query({
-      ...this.form,
+      ...this.appliedForm,
       page: p,
       pageSize: 24
     });
@@ -264,7 +283,7 @@ export class Search {
 
   prefetchAdjacent() {
     const p = this.page();
-    const max = Math.ceil(this.total() / 24) || 999;
+    const max = Math.ceil(this.total() / this.pageSize()) || 999;
     if (p < max) this.prefetchPage(p + 1);
     if (p > 1) this.prefetchPage(p - 1);
   }
@@ -321,6 +340,7 @@ export class Search {
 
   async load() {
     const p = this.page();
+    this.pageSize.set(this.usesHomeFeed() ? 28 : 24);
     const path = this.getPath(p);
     const n = ++this.epoch;
     this.error.set('');

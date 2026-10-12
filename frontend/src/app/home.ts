@@ -11,7 +11,7 @@ import { Sidebar } from './sidebar';
   template: `
 <section class="doki-spotlight" aria-label="Truyện nổi bật" (mouseenter)="pauseAutoSlide()" (mouseleave)="resumeAutoSlide()">
   @if(spotlight(); as m){
-    <img class="spotlight-backdrop" [src]="m.cover" alt="" fetchpriority="high" referrerpolicy="no-referrer" (error)="coverFallback($event)">
+    <img class="spotlight-backdrop" [src]="spotlightCovers()[m.id] || m.cover" alt="" fetchpriority="high" referrerpolicy="no-referrer" (error)="coverFallback($event)">
     <div class="spotlight-shade"></div>
     <div class="spotlight-content">
       <span class="spotlight-eyebrow"><span></span> TÂM ĐIỂM HÔM NAY</span>
@@ -40,13 +40,13 @@ import { Sidebar } from './sidebar';
   <section class="main-content-section">
     <div class="section-title">
       <div><h2>Mới cập nhật</h2><p class="section-subtitle">Truyện và các chương vừa được cập nhật</p></div>
-      <a class="view-all-btn" routerLink="/tim-truyen-nang-cao" [queryParams]="{country:'ja', sort:'latest'}" title="Xem tất cả Manga Nhật Bản mới cập nhật">
+      <a class="view-all-btn" routerLink="/tim-truyen-nang-cao" [queryParams]="{sort:'latest'}" title="Xem tất cả truyện mới cập nhật">
         <span class="desktop-text">Xem tất cả</span>
         <span class="mobile-text">Tất cả</span>
         <app-icon name="arrowRight"/>
       </a>
     </div>
-    
+
     <div class="list-meta-bar">
       <span>Cập nhật mới nhất → cũ nhất</span>
       <span class="total-badge">{{total().toLocaleString('vi')}} truyện</span>
@@ -93,24 +93,24 @@ import { Sidebar } from './sidebar';
       <app-icon name="arrowRight"/>
     </a>
   </div>
-  
+
   <div class="featured-carousel-track">
     @for(m of featured(); track m.id; let i = $index){
-      <a class="featured-card" 
-         [id]="'manga-card-' + m.id" 
+      <a class="featured-card"
+         [id]="'manga-card-' + m.id"
          [attr.data-manga-id]="m.id"
-         [routerLink]="['/truyen-tranh', m.id]" 
+         [routerLink]="['/truyen-tranh', m.id]"
          (click)="savePosition(m.id)"
-         (mouseenter)="api.prefetchDetail(m.id)" 
+         (mouseenter)="api.prefetchDetail(m.id)"
          (touchstart)="api.prefetchDetail(m.id)">
-        <img 
-          [src]="m.cover" 
-          [alt]="m.title" 
-          [attr.fetchpriority]="i < 2 ? 'high' : 'auto'" 
-          [loading]="i < 2 ? 'eager' : 'lazy'" 
-          decoding="async" 
-          referrerpolicy="no-referrer" 
-          (load)="$any($event.target).classList.add('loaded')" 
+        <img
+          [src]="m.cover"
+          [alt]="m.title"
+          [attr.fetchpriority]="i < 2 ? 'high' : 'auto'"
+          [loading]="i < 2 ? 'eager' : 'lazy'"
+          decoding="async"
+          referrerpolicy="no-referrer"
+          (load)="$any($event.target).classList.add('loaded')"
           (error)="coverFallback($event)">
         <div class="featured-overlay">
           <span class="featured-badge"><app-icon name="star"/> {{m.rating.toFixed(1)}}</span>
@@ -132,6 +132,19 @@ import { Sidebar } from './sidebar';
     <div class="featured-empty"><span>Đề cử đang tạm gián đoạn.</span><button (click)="loadFeatured()">Tải lại <app-icon name="arrowRight"/></button></div>
   }
 </section>
+<section class="home-trending" aria-label="Truyện thịnh hành">
+  <div class="section-title">
+    <div><h2>Thịnh hành</h2><p class="section-subtitle">Những bộ truyện được cộng đồng theo dõi nhiều nhất</p></div>
+    <a class="view-all-btn" routerLink="/tim-truyen-nang-cao" [queryParams]="{sort:'hot'}">Xem tất cả <app-icon name="arrowRight"/></a>
+  </div>
+  @if(trendingLoading()){
+    <div class="manga-grid">@for(i of [1,2,3,4,5]; track i){<div class="skeleton skeleton-card"></div>}</div>
+  }@else if(trendingError()){
+    <div class="featured-empty"><span>Chưa thể tải truyện thịnh hành.</span><button (click)="loadTrending()">Thử lại <app-icon name="arrowRight"/></button></div>
+  }@else{
+    <div class="manga-grid">@for(m of trending(); track m.id){<app-card [manga]="m" [idPrefix]="'trending-'"/>}</div>
+  }
+</section>
 <section class="home-community" aria-label="Cộng đồng đọc truyện"><app-sidebar/></section>
 
 `
@@ -148,6 +161,10 @@ export class Home implements OnDestroy {
   spotlightPool = computed(() => (this.pool().length ? this.pool() : this.items()).slice(0, 7));
   spotlight = computed(() => this.spotlightPool()[this.spotlightIndex() % (this.spotlightPool().length || 1)]);
   descriptions = signal<Record<string, string>>({});
+  spotlightCovers = signal<Record<string, string>>({});
+  trending = signal<Manga[]>([]);
+  trendingLoading = signal(true);
+  trendingError = signal(false);
   private requestedDescriptions = new Set<string>();
   description(m: Manga) {
     return cleanDescription(this.descriptions()[m.id] || m.description) === 'Chưa có mô tả cho bộ truyện này.'
@@ -182,10 +199,13 @@ export class Home implements OnDestroy {
   constructor() {
     effect(() => {
       const m = this.spotlight();
-      if (!m || m.description || this.requestedDescriptions.has(m.id)) return;
+      if (!m || this.requestedDescriptions.has(m.id)) return;
       this.requestedDescriptions.add(m.id);
       void this.api.request<Manga>('/catalog/' + m.id, 'GET', undefined, true)
-        .then(detail => this.descriptions.update(values => ({ ...values, [m.id]: detail.description })))
+        .then(detail => {
+          this.descriptions.update(values => ({ ...values, [m.id]: detail.description }));
+          if (detail.cover) this.spotlightCovers.update(values => ({ ...values, [m.id]: detail.cover }));
+        })
         .catch(() => {});
     });
     this.seo.setHomeSeo();
@@ -194,11 +214,22 @@ export class Home implements OnDestroy {
       void this.load();
     });
     void this.loadFeatured();
+    void this.loadTrending();
     this.startAutoSlide();
   }
 
   ngOnDestroy() {
     this.stopAutoSlide();
+  }
+
+  async loadTrending() {
+    this.trendingLoading.set(true);
+    this.trendingError.set(false);
+    try {
+      const result = await this.api.request<Page<Manga>>('/catalog/search?sort=hot&pageSize=10&language=vi', 'GET', undefined, true);
+      this.trending.set(result.items);
+    } catch { this.trendingError.set(true); }
+    finally { this.trendingLoading.set(false); }
   }
 
   savePosition(id?: string) {
@@ -217,7 +248,7 @@ export class Home implements OnDestroy {
     setTimeout(() => {
       let restored = false;
       if (savedMangaId) {
-        const targetEl = document.getElementById('manga-card-' + savedMangaId) || 
+        const targetEl = document.getElementById('manga-card-' + savedMangaId) ||
                          document.querySelector(`[data-manga-id="${savedMangaId}"]`);
         if (targetEl) {
           const rect = targetEl.getBoundingClientRect();
