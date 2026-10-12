@@ -178,7 +178,7 @@ export class Search {
   pageSize = signal(24);
   loading = signal(true);
   error = signal('');
-  expanded = true;
+  expanded = false;
   epoch = 0;
 
   defaults = () => ({
