@@ -71,6 +71,16 @@ await catalog.Featured(20);
 Check(handler.Requests.Count == featuredRequestCount, "Warm recommendations must use cache");
 Console.WriteLine("PASS: concurrent sources, batched recommendation chapters, warm cache");
 
+var secondFeaturedPage = await catalog.Featured(20, 2);
+Check(secondFeaturedPage.Page == 2 && secondFeaturedPage.PageSize == 20 && secondFeaturedPage.Total == 100,
+    "Featured pagination must retain upstream total and the requested page");
+Check(handler.Requests.Any(uri => uri.AbsolutePath == "/manga" && uri.Query.Contains("offset=20")),
+    "Featured page two must fetch the next upstream page");
+var secondPageRequestCount = handler.Requests.Count;
+await catalog.Featured(20, 2);
+Check(handler.Requests.Count == secondPageRequestCount, "Featured pages must have separate reusable cache entries");
+Console.WriteLine("PASS: featured pagination, upstream total, offsets and separate page cache");
+
 using var fallbackCache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 1000 });
 var fallbackHandler = new FakeHandler(uri => Task.FromResult("{\"data\":[]}")) { FailDirect = true };
 using var fallbackHttp = new HttpClient(fallbackHandler);

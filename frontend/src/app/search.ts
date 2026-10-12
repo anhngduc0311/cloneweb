@@ -265,9 +265,16 @@ export class Search {
       && [f.q, f.author, f.genre, f.status, f.demographic, f.year].every(value => !String(value).trim());
   }
 
+  private usesFeaturedFeed() {
+    const f = this.appliedForm;
+    return f.sort === 'latest' && f.language === 'vi' && f.country === 'ko'
+      && [f.q, f.author, f.genre, f.status, f.demographic, f.year].every(value => !String(value).trim());
+  }
+
   getPath(p: number) {
     // Reuse Home's exact feed and cache key so chapter dates and source order match.
     if (this.usesHomeFeed()) return '/catalog/home?page=' + p;
+    if (this.usesFeaturedFeed()) return '/catalog/featured?limit=20' + (p > 1 ? '&page=' + p : '');
     return '/catalog/search?' + this.api.query({
       ...this.appliedForm,
       page: p,
@@ -340,7 +347,7 @@ export class Search {
 
   async load() {
     const p = this.page();
-    this.pageSize.set(this.usesHomeFeed() ? 28 : 24);
+    this.pageSize.set(this.usesHomeFeed() ? 28 : this.usesFeaturedFeed() ? 20 : 24);
     const path = this.getPath(p);
     const n = ++this.epoch;
     this.error.set('');

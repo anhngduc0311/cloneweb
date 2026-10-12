@@ -471,9 +471,9 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         return result;
     }
 
-    public async Task<CatalogPage> Featured(int size = 20)
+    public async Task<CatalogPage> Featured(int size = 20, int page = 1)
     {
-        var cacheKey = $"catalog:featured:manhwa_manhua:v6:{size}";
+        var cacheKey = $"catalog:featured:manhwa_manhua:v7:{page}:{size}";
         var cached = await CacheGet<CatalogPage>(cacheKey);
         if (cached != null) return cached;
 
@@ -481,16 +481,18 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         var ggTask = LoadGg();
         async Task<List<MangaCard>> LoadGg()
         {
-            try { return await truyengg.GetLatestManhwaManhua(1); }
+            try { return await truyengg.GetLatestManhwaManhua(page); }
             catch { return []; }
         }
 
         // 2. Fetch from MangaDex (ko & zh) with Vietnamese translation
         List<MangaCard> mdItems = [];
+        var total = 0;
         try
         {
-            var path = $"/manga?limit={size}&includes[]=cover_art&includes[]=author&includes[]=artist&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&order[latestUploadedChapter]=desc&originalLanguage[]=ko&originalLanguage[]=zh&availableTranslatedLanguage[]=vi";
+            var path = $"/manga?limit={size}&offset={(page - 1) * size}&includes[]=cover_art&includes[]=author&includes[]=artist&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&order[latestUploadedChapter]=desc&originalLanguage[]=ko&originalLanguage[]=zh&availableTranslatedLanguage[]=vi";
             var result = await Get(path);
+            total = Math.Min((int?)result["total"] ?? 0, 10000);
             var rawItems = result["data"]!.AsArray().Select(x => Map(x!, isThumbnail: true)).ToList();
             // One batch request for recent chapters, not full chapter scraping
             // and cross-source matching for each individual recommendation.
@@ -549,7 +551,7 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         }
 
         var finalItems = merged.OrderByDescending(x => x.UpdatedAt).Take(size).ToList();
-        var res = new CatalogPage(finalItems, finalItems.Count, 1, size);
+        var res = new CatalogPage(finalItems, Math.Max(total, (page - 1) * size + finalItems.Count), page, size);
         await CacheSet(cacheKey, res, TimeSpan.FromMinutes(5));
         return res;
     }

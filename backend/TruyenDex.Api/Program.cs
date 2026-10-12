@@ -391,8 +391,11 @@ app.MapGet("/api/catalog/home", async (int? page, int? pageSize, Catalog catalog
     if ((page ?? 1) is < 1 or > 5000) return Results.BadRequest(new { message = "Trang không hợp lệ." });
     return Results.Ok(await catalog.Home(page ?? 1, Math.Clamp(pageSize ?? 28, 1, 28)));
 });
-app.MapGet("/api/catalog/featured", async (int? limit, Catalog catalog) => {
-    return Results.Ok(await catalog.Featured(Math.Clamp(limit ?? 20, 1, 50)));
+app.MapGet("/api/catalog/featured", async (int? limit, int? page, Catalog catalog) => {
+    var size = Math.Clamp(limit ?? 20, 1, 50);
+    var p = page ?? 1;
+    if (p < 1 || (long)p * size > 10000) return Results.BadRequest(new { message = "Trang không hợp lệ." });
+    return Results.Ok(await catalog.Featured(size, p));
 });
 app.MapGet("/api/catalog/search", async (string? page, string? pageSize, string? q, string? author, string? genre, string? status, string? country, string? demographic, string? language, string? sort, string? year, Catalog catalog) => {
     var p = int.TryParse(page, out var pi) ? Math.Max(1, pi) : 1;

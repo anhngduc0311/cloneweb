@@ -84,7 +84,7 @@ import { BannerImage, bannerImageScore, originalBannerCover, rankSpotlightCandid
 <section class="recommendations">
   <div class="section-title">
     <div><h2>Manhwa nổi bật</h2><p class="section-subtitle">Những câu chuyện đáng để khám phá</p></div>
-    <a class="view-all-manhwa-link" routerLink="/tim-truyen-nang-cao" [queryParams]="{country:'ko'}">
+    <a class="view-all-manhwa-link" routerLink="/tim-truyen-nang-cao" [queryParams]="{country:'ko', sort:'latest', language:'vi'}">
       <span class="desktop-text">Xem tất cả</span>
       <span class="mobile-text">Tất cả Manhwa</span>
       <app-icon name="arrowRight"/>
