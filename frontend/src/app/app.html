@@ -142,6 +142,7 @@
                 <div class="menu-divider"></div>
                 <a routerLink="/theo-doi" (click)="account.set(false)"><app-icon name="heart"/> Truyện theo dõi ({{store.follows().length}})</a>
                 <a routerLink="/lich-su" (click)="account.set(false)"><app-icon name="clock"/> Lịch sử đọc ({{store.history().length}})</a>
+                <a routerLink="/doi-mat-khau" (click)="account.set(false)"><app-icon name="lock"/> Đổi mật khẩu</a>
                 <button (click)="openSettings();account.set(false)"><app-icon name="settings"/> Tùy chỉnh đọc truyện</button>
                 @if(store.user()?.role === 'admin' || store.user()?.role === 'superadmin' || store.user()?.role === 'editor' || store.user()?.role === 'translator'){
                   <div class="menu-divider"></div>

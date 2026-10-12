@@ -39,12 +39,29 @@ if (!string.IsNullOrWhiteSpace(meiliUrl)) {
 
 builder.Services.AddHttpClient<Catalog>(c => { c.Timeout = TimeSpan.FromSeconds(15); c.DefaultRequestHeaders.UserAgent.ParseAdd("TruyenDexClone/1.0"); });
 builder.Services.AddHttpClient<TruyenGg>(c => { c.Timeout = TimeSpan.FromSeconds(15); c.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"); });
-builder.Services.AddSingleton<TruyenGg>();
-builder.Services.AddScoped<Catalog>();
+// AddHttpClient already registers these typed clients. Re-registering the
+// classes here replaces their configured clients with the default HttpClient
+// (without User-Agent/timeout), which MangaDex rejects with HTTP 400.
 builder.Services.AddScoped<PasswordHasher<AppUser>>();
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(o => o.TokenValidationParameters = new() {
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(o => {
+    o.TokenValidationParameters = new() {
     ValidateIssuer = true, ValidateAudience = true, ValidateLifetime = true, ValidateIssuerSigningKey = true,
     ValidIssuer = "truyendex-local", ValidAudience = "truyendex-web", IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)), ClockSkew = TimeSpan.FromSeconds(30)
+    };
+    o.Events = new JwtBearerEvents {
+        OnTokenValidated = async ctx => {
+            if (!Guid.TryParse(ctx.Principal?.FindFirstValue(ClaimTypes.NameIdentifier), out var id)) {
+                ctx.Fail("Invalid user.");
+                return;
+            }
+            var db = ctx.HttpContext.RequestServices.GetRequiredService<AppDb>();
+            var u = await db.Users.AsNoTracking().Where(x => x.Id == id)
+                .Select(x => new { x.PasswordVersion, x.IsBanned }).SingleOrDefaultAsync(ctx.HttpContext.RequestAborted);
+            var version = ctx.Principal?.FindFirstValue("pwd_ver") ?? "0";
+            if (u is null || u.IsBanned || version != u.PasswordVersion.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                ctx.Fail("Session expired.");
+        }
+    };
 });
 builder.Services.AddAuthorization();
 builder.Services.AddRateLimiter(o => {
@@ -70,9 +87,9 @@ app.UseAuthorization();
 app.UseStaticFiles();
 Guid UserId(ClaimsPrincipal u) => Guid.Parse(u.FindFirstValue(ClaimTypes.NameIdentifier)!);
 object Session(AppUser u) {
-    var jwt = new JwtSecurityToken("truyendex-local", "truyendex-web", [new(ClaimTypes.NameIdentifier, u.Id.ToString()), new(ClaimTypes.Name, u.Name), new(ClaimTypes.Role, u.Role)],
+    var jwt = new JwtSecurityToken("truyendex-local", "truyendex-web", [new(ClaimTypes.NameIdentifier, u.Id.ToString()), new(ClaimTypes.Name, u.Name), new(ClaimTypes.Role, u.Role), new("pwd_ver", u.PasswordVersion.ToString(System.Globalization.CultureInfo.InvariantCulture))],
         expires: DateTime.UtcNow.AddDays(7), signingCredentials: new(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)), SecurityAlgorithms.HmacSha256));
-    return new { token = new JwtSecurityTokenHandler().WriteToken(jwt), user = new { u.Id, u.Name, u.Email, u.Role, u.Coins, u.IsBanned } };
+    return new { token = new JwtSecurityTokenHandler().WriteToken(jwt), user = new { u.Id, u.Name, u.Email, u.Role, u.Coins, u.IsBanned, canChangePassword = !string.IsNullOrEmpty(u.PasswordHash) } };
 }
 async Task Remember(AppDb db, MangaCard m, MeilisearchClient? meili = null) {
     try {
@@ -130,26 +147,7 @@ app.MapPost("/api/auth/login", async (LoginRequest req, AppDb db, PasswordHasher
         u = await db.Users.FirstOrDefaultAsync(x => x.Role == "admin");
     }
 
-    if ((email == "admin" || (u != null && u.Role == "admin")) && req.Password == "admin123")
-    {
-        if (u == null)
-        {
-            u = new AppUser { Email = "admin", Name = "Quản trị viên", Role = "admin" };
-            u.PasswordHash = hasher.HashPassword(u, "admin123");
-            db.Users.Add(u);
-            await db.SaveChangesAsync();
-        }
-        else
-        {
-            u.Email = "admin";
-            u.Role = "admin";
-            u.PasswordHash = hasher.HashPassword(u, "admin123");
-            await db.SaveChangesAsync();
-        }
-        return Results.Ok(Session(u));
-    }
-
-    if (u is null || hasher.VerifyHashedPassword(u, u.PasswordHash, req.Password) == PasswordVerificationResult.Failed)
+    if (u is null || u.IsBanned || string.IsNullOrEmpty(u.PasswordHash) || hasher.VerifyHashedPassword(u, u.PasswordHash, req.Password) == PasswordVerificationResult.Failed)
         return Results.Json(new { message = "Email hoặc mật khẩu không đúng." }, statusCode: 401);
     return Results.Ok(Session(u));
 }).RequireRateLimiting("auth");
@@ -338,8 +336,33 @@ app.MapGet("/api/auth/google/callback", async (string? code, string? state, stri
 });
 app.MapGet("/api/auth/me", async (ClaimsPrincipal user, AppDb db) => {
     var u = await db.Users.FindAsync(UserId(user));
-    return u is null ? Results.Unauthorized() : Results.Ok(new { u.Id, u.Name, u.Email, u.Role, u.Coins, u.IsBanned });
+    return u is null ? Results.Unauthorized() : Results.Ok(new { u.Id, u.Name, u.Email, u.Role, u.Coins, u.IsBanned, canChangePassword = !string.IsNullOrEmpty(u.PasswordHash) });
 }).RequireAuthorization();
+app.MapPost("/api/auth/change-password", async (ChangePasswordRequest req, ClaimsPrincipal user, AppDb db, PasswordHasher<AppUser> hasher) => {
+    if ((req.CurrentPassword?.Length ?? 0) is < 1 or > 128 || (req.NewPassword?.Length ?? 0) is < 10 or > 128)
+        return Results.BadRequest(new { message = "Mật khẩu mới phải có từ 10–128 ký tự." });
+    if (req.NewPassword != req.ConfirmPassword)
+        return Results.BadRequest(new { message = "Mật khẩu xác nhận chưa trùng khớp." });
+    if (req.CurrentPassword == req.NewPassword)
+        return Results.BadRequest(new { message = "Mật khẩu mới phải khác mật khẩu hiện tại." });
+    var u = await db.Users.FindAsync(UserId(user));
+    if (u is null || u.IsBanned) return Results.Unauthorized();
+    if (string.IsNullOrEmpty(u.PasswordHash))
+        return Results.BadRequest(new { message = "Tài khoản này đăng nhập bằng Google. Hãy đổi mật khẩu trong tài khoản Google của bạn." });
+    if (hasher.VerifyHashedPassword(u, u.PasswordHash, req.CurrentPassword!) == PasswordVerificationResult.Failed)
+        return Results.BadRequest(new { message = "Mật khẩu hiện tại không đúng." });
+
+    var previousHash = u.PasswordHash;
+    var previousVersion = u.PasswordVersion;
+    var newHash = hasher.HashPassword(u, req.NewPassword!);
+    var updated = await db.Users.Where(x => x.Id == u.Id && x.PasswordHash == previousHash && x.PasswordVersion == previousVersion)
+        .ExecuteUpdateAsync(s => s.SetProperty(x => x.PasswordHash, newHash).SetProperty(x => x.PasswordVersion, previousVersion + 1));
+    if (updated != 1)
+        return Results.Conflict(new { message = "Mật khẩu đã được thay đổi ở phiên khác. Vui lòng đăng nhập lại." });
+    u.PasswordHash = newHash;
+    u.PasswordVersion = previousVersion + 1;
+    return Results.Ok(Session(u));
+}).RequireAuthorization().RequireRateLimiting("auth");
 app.MapGet("/api/catalog/home", async (int? page, int? pageSize, Catalog catalog) => {
     if ((page ?? 1) is < 1 or > 5000) return Results.BadRequest(new { message = "Trang không hợp lệ." });
     return Results.Ok(await catalog.Home(page ?? 1, Math.Clamp(pageSize ?? 28, 1, 28)));
@@ -520,13 +543,10 @@ using (var scope = app.Services.CreateScope()) {
     var adminUser = await db.Users.FirstOrDefaultAsync(x => x.Email == "admin")
                  ?? await db.Users.FirstOrDefaultAsync(x => x.Role == "admin");
     if (adminUser == null) {
-        adminUser = new AppUser { Email = "admin", Name = "Quản trị viên", Role = "admin" };
-        adminUser.PasswordHash = hasher.HashPassword(adminUser, "admin123");
+        adminUser = new AppUser { Email = (builder.Configuration["Seed:AdminEmail"] ?? "admin").Trim().ToLowerInvariant(), Name = "Quản trị viên", Role = "admin" };
+        var initialPassword = builder.Configuration["Seed:AdminPassword"] ?? throw new InvalidOperationException("Configure Seed__AdminPassword for the first administrator.");
+        adminUser.PasswordHash = hasher.HashPassword(adminUser, initialPassword);
         db.Users.Add(adminUser);
-    } else {
-        adminUser.Email = "admin";
-        adminUser.Role = "admin";
-        adminUser.PasswordHash = hasher.HashPassword(adminUser, "admin123");
     }
     await AdminEndpoints.SeedDefaultAdminDataAsync(db);
     await db.SaveChangesAsync();

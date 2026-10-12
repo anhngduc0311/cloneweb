@@ -50,6 +50,9 @@ namespace TruyenDex.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<long>("PasswordVersion")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasColumnType("text");

@@ -40,7 +40,8 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 {
     private static readonly SemaphoreSlim Gate = new(6, 6);
     private static readonly string[] SiteOrigins = ["https://api.truyendex.cc", "https://api.truyendex.xyz"];
-    private static readonly string[] Origins = ["https://api-proxy.truyendex.cc/mangadex", "https://api-proxy.truyendex.xyz/mangadex", "https://api.mangadex.org"];
+    // Use the authoritative API first; unavailable proxies must not delay every request.
+    private static readonly string[] Origins = ["https://api.mangadex.org", "https://api-proxy.truyendex.cc/mangadex", "https://api-proxy.truyendex.xyz/mangadex"];
     private static string S(JsonNode? n) => n?.ToString() ?? "";
     private static string E(string s) => Uri.EscapeDataString(s);
     private static DateTime Date(JsonNode? n) => DateTime.TryParse(S(n), out var d) ? d.ToUniversalTime() : DateTime.UtcNow;
@@ -344,11 +345,11 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
     public async Task<CatalogPage> Home(int page, int size)
     {
-        var cacheKey = $"catalog:home:v14:{page}:{size}";
+        size = 28;
+        var cacheKey = $"catalog:home:v16:{page}:{size}";
         var cachedPage = await CacheGet<CatalogPage>(cacheKey);
         if (cachedPage != null) return cachedPage;
 
-        size = 28;
         var mangaDexItems = new List<MangaCard>();
         int total = 0;
 
@@ -462,7 +463,8 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
         // Exclude any remaining Manhwa/Manhua items, sort by newest chapter update descending, and take page size
         merged = merged.Where(m => !IsManhwaOrManhua(m)).OrderByDescending(x => x.UpdatedAt).Take(size).ToList();
-        await EnsureTopChapters(merged, 3);
+        // List sources already include recent chapters. Fetch the complete chapter
+        // list only when opening a story, rather than scraping every card here.
 
         var result = new CatalogPage(merged, total + ggItems.Count, page, size);
         await CacheSet(cacheKey, result, TimeSpan.FromMinutes(15));
@@ -471,17 +473,17 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
 
     public async Task<CatalogPage> Featured(int size = 20)
     {
-        var cacheKey = $"catalog:featured:manhwa_manhua:v3:{size}";
+        var cacheKey = $"catalog:featured:manhwa_manhua:v6:{size}";
         var cached = await CacheGet<CatalogPage>(cacheKey);
         if (cached != null) return cached;
 
-        // 1. Fetch from TruyenGG (Korean Manhwa & Chinese Manhua)
-        List<MangaCard> ggItems = [];
-        try
+        // Fetch independent sources concurrently.
+        var ggTask = LoadGg();
+        async Task<List<MangaCard>> LoadGg()
         {
-            ggItems = await truyengg.GetLatestManhwaManhua(1);
+            try { return await truyengg.GetLatestManhwaManhua(1); }
+            catch { return []; }
         }
-        catch { }
 
         // 2. Fetch from MangaDex (ko & zh) with Vietnamese translation
         List<MangaCard> mdItems = [];
@@ -490,10 +492,13 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
             var path = $"/manga?limit={size}&includes[]=cover_art&includes[]=author&includes[]=artist&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&order[latestUploadedChapter]=desc&originalLanguage[]=ko&originalLanguage[]=zh&availableTranslatedLanguage[]=vi";
             var result = await Get(path);
             var rawItems = result["data"]!.AsArray().Select(x => Map(x!, isThumbnail: true)).ToList();
-            await Stats(rawItems);
+            // One batch request for recent chapters, not full chapter scraping
+            // and cross-source matching for each individual recommendation.
+            await Task.WhenAll(Stats(rawItems), PopulateMangaDexChapters(rawItems, "vi"));
             mdItems = rawItems;
         }
         catch { }
+        var ggItems = await ggTask;
 
         // 3. Merge & Deduplicate
         var merged = new List<MangaCard>();
@@ -544,7 +549,6 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         }
 
         var finalItems = merged.OrderByDescending(x => x.UpdatedAt).Take(size).ToList();
-        await EnsureTopChapters(finalItems, 3);
         var res = new CatalogPage(finalItems, finalItems.Count, 1, size);
         await CacheSet(cacheKey, res, TimeSpan.FromMinutes(5));
         return res;
@@ -1057,8 +1061,9 @@ public class Catalog(HttpClient http, IMemoryCache cache, TruyenGg truyengg, ICo
         try
         {
             var targetLang = language == "en" ? "en" : "vi";
-            var ids = items.Select(x => x.Id.ToString()).Distinct().ToList();
-            var chapPath = $"/chapter?limit=100&translatedLanguage[]={targetLang}&order[readableAt]=desc&" + string.Join("&", ids.Select(id => "manga[]=" + id));
+            // MangaDex's chapter endpoint accepts only one `manga` filter, not
+            // `manga[]`. Fetch a shared recent feed and match relationships below.
+            var chapPath = $"/chapter?limit=100&translatedLanguage[]={targetLang}&order[readableAt]=desc&includeExternalUrl=0&includes[]=scanlation_group&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica";
             var res = await Get(chapPath);
             var data = res["data"]?.AsArray();
             if (data != null && data.Count > 0)

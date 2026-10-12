@@ -49,7 +49,7 @@ import { Icon } from './ui';
 
       <label>
         <span>Mật khẩu</span>
-        <input type="password" name="password" [(ngModel)]="password" required [minlength]="register() ? 6 : 1" maxlength="128" [autocomplete]="register() ? 'new-password' : 'current-password'" placeholder="Nhập mật khẩu">
+        <input type="password" name="password" [(ngModel)]="password" required [minlength]="register() ? 10 : 1" maxlength="128" [autocomplete]="register() ? 'new-password' : 'current-password'" placeholder="Nhập mật khẩu">
       </label>
 
       @if(register()){

@@ -4,7 +4,7 @@ export interface Chapter { id:string; mangaId:string; title:string; number:numbe
 export interface Manga { id:string; title:string; alternativeTitle:string; author:string; cover:string; description:string; genres:string[]; status:string; country:string; demographic:string; contentRating:string; year:number|null; rating:number; follows:number; updatedAt:string; chapters:Chapter[]; totalChapters?:number; }
 export interface Page<T> { items:T[]; total:number; page:number; pageSize:number; }
 export interface Reader { chapter:Chapter; manga:Manga; pages:string[]; dataSaverPages:string[]; externalUrl:string|null; navigation:Chapter[]; }
-export interface User { id:string; name:string; email:string; role:string; coins?:number; isBanned?:boolean; }
+export interface User { id:string; name:string; email:string; role:string; coins?:number; isBanned?:boolean; canChangePassword?:boolean; }
 export interface LibraryItem { mangaId:string; title:string; cover:string; chapterId?:string; chapterTitle?:string; readAt?:string; }
 export interface Comment { id:string; mangaId:string; mangaTitle:string; userId:string; name:string; body:string; createdAt:string; }
 export interface Settings { language:string; dataSaver:boolean; width:number; theme:string; }
@@ -270,6 +270,12 @@ export class Store {
     setStoredToken(s.token, s.user);
     this.user.set(s.user);
     await this.refreshLibrary();
+  }
+
+  async changePassword(currentPassword: string, newPassword: string, confirmPassword: string) {
+    const session = await this.api.request<{token:string;user:User}>('/auth/change-password', 'POST', {currentPassword, newPassword, confirmPassword});
+    setStoredToken(session.token, session.user);
+    this.user.set(session.user);
   }
 
   async getGoogleConfig(){

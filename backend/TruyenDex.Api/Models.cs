@@ -53,6 +53,7 @@ public class AppUser
     public string Email { get; set; } = "";
     public string Name { get; set; } = "";
     public string PasswordHash { get; set; } = "";
+    public long PasswordVersion { get; set; }
     public string Role { get; set; } = "reader"; // superadmin, admin, editor, translator, reader
     public long Coins { get; set; }
     public bool IsBanned { get; set; }

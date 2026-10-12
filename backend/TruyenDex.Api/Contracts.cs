@@ -1,6 +1,7 @@
 namespace TruyenDex.Api;
 public record RegisterRequest(string Email, string Password, string Name);
 public record LoginRequest(string Email, string Password);
+public record ChangePasswordRequest(string CurrentPassword, string NewPassword, string ConfirmPassword);
 public record CommentRequest(string Body);
 public record RatingRequest(int Score);
 public record MangaRequest(string Title, string AlternativeTitle, string Author, string Cover, string Description,
