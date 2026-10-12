@@ -10,7 +10,7 @@ import { BannerImage, bannerImageScore, originalBannerCover, rankSpotlightCandid
   selector: 'app-home',
   imports: [RouterLink, Icon, MangaCardComponent, Pagination, Sidebar],
   template: `
-<section class="doki-spotlight" aria-label="Truyện nổi bật" (mouseenter)="pauseAutoSlide()" (mouseleave)="resumeAutoSlide()">
+<section class="doki-spotlight" aria-label="Truyện nổi bật">
   @if(spotlight(); as m){
     <img class="spotlight-backdrop" [src]="spotlightCovers()[m.id] || m.cover" alt="" fetchpriority="high" referrerpolicy="no-referrer" (error)="rejectSpotlight(m.id)">
     <div class="spotlight-shade"></div>
@@ -25,7 +25,7 @@ import { BannerImage, bannerImageScore, originalBannerCover, rankSpotlightCandid
         <button class="spotlight-save" [disabled]="following()" [class.saved]="isFollowed(m.id)" [attr.aria-label]="isFollowed(m.id) ? 'Bỏ theo dõi truyện' : 'Theo dõi truyện'" [attr.aria-pressed]="isFollowed(m.id)" (click)="toggleFollow(m)"><app-icon name="bookmark"/></button>
       </div>
       <div class="spotlight-controls">
-        <button class="spotlight-pause" [attr.aria-label]="autoPaused() ? 'Tiếp tục chuyển truyện' : 'Tạm dừng chuyển truyện'" [attr.aria-pressed]="autoPaused()" (click)="autoPaused.set(!autoPaused())">{{autoPaused() ? '▶' : 'Ⅱ'}}</button>
+        <button class="spotlight-pause" [attr.aria-label]="autoPaused() ? 'Tiếp tục chuyển truyện' : 'Tạm dừng chuyển truyện'" [attr.aria-pressed]="autoPaused()" (click)="toggleAutoSlide()">{{autoPaused() ? '▶' : 'Ⅱ'}}</button>
         <div class="spotlight-dots" aria-label="Chọn truyện nổi bật">
           @for(item of spotlightPool(); track item.id; let i = $index){<button [class.active]="spotlightIndex() === i" [attr.aria-label]="'Hiển thị truyện nổi bật ' + (i + 1)" [attr.aria-pressed]="spotlightIndex() === i" (click)="selectSpotlight(i)"></button>}
         </div>
@@ -81,11 +81,7 @@ import { BannerImage, bannerImageScore, originalBannerCover, rankSpotlightCandid
 
 
 </div>
-<section class="recommendations"
-         (mouseenter)="pauseAutoSlide()"
-         (mouseleave)="resumeAutoSlide()"
-         (touchstart)="pauseAutoSlide()"
-         (touchend)="resumeAutoSlide()">
+<section class="recommendations">
   <div class="section-title">
     <div><h2>Manhwa nổi bật</h2><p class="section-subtitle">Những câu chuyện đáng để khám phá</p></div>
     <a class="view-all-manhwa-link" routerLink="/tim-truyen-nang-cao" [queryParams]="{country:'ko'}">
@@ -157,7 +153,7 @@ export class Home implements OnDestroy {
   seo = inject(SeoService);
   store = inject(Store);
   statuses = statuses;
-  autoPaused = signal(typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  autoPaused = signal(false);
   spotlightIndex = signal(0);
   private rankedSpotlights = signal<Manga[]>([]);
   private failedSpotlights = signal<string[]>([]);
@@ -186,6 +182,10 @@ export class Home implements OnDestroy {
     finally { this.following.set(false); }
   }
   selectSpotlight(index: number) { this.spotlightIndex.set(index); this.startAutoSlide(); }
+  toggleAutoSlide() {
+    this.autoPaused.update(paused => !paused);
+    if (!this.autoPaused()) this.startAutoSlide();
+  }
 
   items = signal<Manga[]>([]);
   pool = signal<Manga[]>([]);
@@ -200,7 +200,6 @@ export class Home implements OnDestroy {
   offset = 0;
   epoch = 0;
   private autoSlideTimer?: ReturnType<typeof setInterval>;
-  isPaused = false;
 
   constructor() {
     effect(onCleanup => {
@@ -353,7 +352,7 @@ export class Home implements OnDestroy {
     this.stopAutoSlide();
     if (typeof window === 'undefined') return;
     this.autoSlideTimer = setInterval(() => {
-      if (!this.isPaused && !this.autoPaused() && !this.selectingSpotlight() && this.spotlightPool().length > 1 && !document.hidden) {
+      if (!this.autoPaused() && !this.selectingSpotlight() && this.spotlightPool().length > 1 && !document.hidden) {
         this.spotlightIndex.update(i => (i + 1) % this.spotlightPool().length);
       }
     }, 6500);
@@ -364,14 +363,6 @@ export class Home implements OnDestroy {
       clearInterval(this.autoSlideTimer);
       this.autoSlideTimer = undefined;
     }
-  }
-
-  pauseAutoSlide() {
-    this.isPaused = true;
-  }
-
-  resumeAutoSlide() {
-    this.isPaused = false;
   }
 
   manualRotate(step: number) {
