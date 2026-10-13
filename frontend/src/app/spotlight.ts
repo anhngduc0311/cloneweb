@@ -2,6 +2,34 @@ import type { Manga } from './core';
 
 export interface BannerImage { url: string; width: number; height: number; }
 
+// Publish each usable image immediately; a slow CDN must not hold up the hero.
+export async function loadSpotlightImages(
+  candidates: Manga[],
+  probe: (url: string) => Promise<BannerImage | null>,
+  publish: (selected: Manga[], images: Record<string, BannerImage>) => void,
+  isCurrent: () => boolean
+): Promise<void> {
+  const images: Record<string, BannerImage> = {};
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < candidates.length && Object.keys(images).length < 10 && isCurrent()) {
+      const manga = candidates[cursor++];
+      const urls = [...new Set([originalBannerCover(manga.cover), manga.cover])]
+        .filter(url => url && !url.includes('cover-placeholder'));
+      for (const url of urls) {
+        const image = await probe(url);
+        if (!isCurrent()) return;
+        if (image && bannerImageScore(image) > 0) {
+          images[manga.id] = image;
+          publish(rankSpotlightCandidates(candidates, Date.now(), images).slice(0, 10), images);
+          break;
+        }
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(3, candidates.length) }, worker));
+}
+
 export function bannerImageScore(image: BannerImage): number {
   if (image.width < 480 || image.height < 320) return 0;
   const resolution = Math.min(1, image.width / 1440) * 20;

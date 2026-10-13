@@ -4,7 +4,7 @@ import { Api, Manga, Page, Store, cleanDescription, message, statuses } from './
 import { SeoService } from './seo.service';
 import { Icon, MangaCardComponent, Pagination } from './ui';
 import { Sidebar } from './sidebar';
-import { BannerImage, bannerImageScore, originalBannerCover, rankSpotlightCandidates } from './spotlight';
+import { BannerImage, loadSpotlightImages, rankSpotlightCandidates } from './spotlight';
 
 @Component({
   selector: 'app-home',
@@ -160,6 +160,8 @@ export class Home implements OnDestroy {
   private latestSpotlights = signal<Manga[]>([]);
   private selectingSpotlight = signal(false);
   private selectionEpoch = 0;
+  private bannerProbes = new Map<string, Promise<BannerImage | null>>();
+  private descriptionRequests = new Set<string>();
   spotlightPool = computed(() => this.rankedSpotlights().filter(m => !this.failedSpotlights().includes(m.id)));
   spotlight = computed(() => this.spotlightPool()[this.spotlightIndex() % (this.spotlightPool().length || 1)]);
   descriptions = signal<Record<string, string>>({});
@@ -206,9 +208,17 @@ export class Home implements OnDestroy {
       const candidates = rankSpotlightCandidates([...this.pool(), ...this.trendingSpotlights(), ...this.latestSpotlights()]).slice(0, 40);
       const epoch = ++this.selectionEpoch;
       if (!candidates.length) { this.selectingSpotlight.set(false); return; }
-      // Batch independently arriving feeds; only three image checks run at once.
-      const timer = setTimeout(() => { void this.chooseSpotlights(candidates, epoch); }, 200);
+      const timer = setTimeout(() => { void this.chooseSpotlights(candidates, epoch); }, 0);
       onCleanup(() => { clearTimeout(timer); ++this.selectionEpoch; });
+    });
+    effect(() => {
+      const manga = this.spotlight();
+      if (manga && !this.descriptionRequests.has(manga.id)) {
+        this.descriptionRequests.add(manga.id);
+        void this.api.request<Manga>('/catalog/' + manga.id, 'GET', undefined, true)
+          .then(detail => this.descriptions.update(current => ({ ...current, [manga.id]: detail.description || manga.description })))
+          .catch(() => {});
+      }
     });
     this.seo.setHomeSeo();
     this.route.queryParamMap.subscribe(p => {
@@ -231,7 +241,9 @@ export class Home implements OnDestroy {
   }
 
   private probeBanner(url: string): Promise<BannerImage | null> {
-    return new Promise(resolve => {
+    const cached = this.bannerProbes.get(url);
+    if (cached) return cached;
+    const pending = new Promise<BannerImage | null>(resolve => {
       const image = new Image();
       let finished = false;
       const finish = (result: BannerImage | null) => {
@@ -247,40 +259,21 @@ export class Home implements OnDestroy {
       image.onerror = () => finish(null);
       image.src = url;
     });
+    this.bannerProbes.set(url, pending);
+    return pending;
   }
 
   private async chooseSpotlights(candidates: Manga[], epoch: number) {
     this.selectingSpotlight.set(true);
-    const images: Record<string, BannerImage> = {};
-    const descriptions: Record<string, string> = {};
-    let cursor = 0;
-    const worker = async () => {
-      while (cursor < candidates.length && Object.keys(images).length < 10 && epoch === this.selectionEpoch) {
-        const m = candidates[cursor++];
-        let detail = m;
-        try { detail = await this.api.request<Manga>('/catalog/' + m.id, 'GET', undefined, true); } catch { }
-        if (epoch !== this.selectionEpoch) return;
-        descriptions[m.id] = detail.description || m.description;
-        const urls = [...new Set([originalBannerCover(detail.cover), detail.cover, m.cover])]
-          .filter(url => url && !url.includes('cover-placeholder'));
-        for (const url of urls) {
-          const image = await this.probeBanner(url);
-          if (epoch !== this.selectionEpoch) return;
-          if (image && bannerImageScore(image) > bannerImageScore(images[m.id] || { url: '', width: 0, height: 0 })) images[m.id] = image;
-          if (image && image.width >= 1000) break;
-        }
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(3, candidates.length) }, worker));
+    await loadSpotlightImages(candidates, url => this.probeBanner(url), (selected, images) => {
+      const activeId = this.spotlight()?.id;
+      this.spotlightCovers.set(Object.fromEntries(selected.map(m => [m.id, images[m.id].url])));
+      this.rankedSpotlights.set(selected);
+      this.spotlightIndex.set(Math.max(0, selected.findIndex(m => m.id === activeId)));
+      this.selectingSpotlight.set(false);
+    }, () => epoch === this.selectionEpoch);
     if (epoch !== this.selectionEpoch) return;
-    const selected = rankSpotlightCandidates(candidates, Date.now(), images).slice(0, 10);
-    this.descriptions.set(descriptions);
-    this.spotlightCovers.set(Object.fromEntries(selected.map(m => [m.id, images[m.id].url])));
-    this.failedSpotlights.set([]);
-    this.rankedSpotlights.set(selected);
-    this.spotlightIndex.set(0);
     this.selectingSpotlight.set(false);
-    this.startAutoSlide();
   }
 
   async loadTrending() {

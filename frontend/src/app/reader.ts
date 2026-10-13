@@ -5,6 +5,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Api, Store, Reader as ReaderData, message, proxyImage } from './core';
 import { SeoService } from './seo.service';
 import { Icon } from './ui';
+import { readerBannerBounds } from './reader-banners';
 
 export interface ZoomLevel {
   label: string;
@@ -225,7 +226,8 @@ export interface SpeedLevel {
                    decoding="async" 
                    [attr.fetchpriority]="i === 0 ? 'high' : 'auto'" 
                    referrerpolicy="no-referrer" 
-                   (load)="onLoaded(i)" 
+                   [style.visibility]="loaded().has(i) ? null : 'hidden'"
+                   (load)="onLoaded(i, $event)"
                    (error)="imageError(i)">
             }
           </div>
@@ -252,7 +254,8 @@ export interface SpeedLevel {
               <img [src]="pageUrl(pages()[singlePageIndex()], singlePageIndex())" 
                    [alt]="'Trang ' + (singlePageIndex() + 1)" 
                    decoding="async"
-                   (load)="onLoaded(singlePageIndex())"
+                   [style.visibility]="loaded().has(singlePageIndex()) ? null : 'hidden'"
+                   (load)="onLoaded(singlePageIndex(), $event)"
                    (error)="imageError(singlePageIndex())">
             }
           </div>
@@ -474,6 +477,7 @@ export class Reader implements OnInit, OnDestroy {
   reportDescription = '';
 
   private preloadedUrls = new Set<string>();
+  private cleanedPages = new Map<string, string>();
   private preloadedNextId = '';
   private onFullscreenChange = () => {
     this.isFullscreen = !!document.fullscreenElement;
@@ -529,6 +533,7 @@ export class Reader implements OnInit, OnDestroy {
     this.loaded.set(new Set());
     this.fallbackUrls.set(new Map());
     this.preloadedUrls.clear();
+    this.cleanedPages.clear();
     this.preloadedNextId = '';
     this.scrollToTopInstant();
 
@@ -557,10 +562,34 @@ export class Reader implements OnInit, OnDestroy {
   }
 
   pageUrl(url: string, i: number): string {
-    return this.fallbackUrls().get(i) ?? url;
+    return this.cleanedPages.get(url) ?? this.fallbackUrls().get(i) ?? url;
   }
 
-  onLoaded(i: number): void {
+  onLoaded(i: number, event: Event): void {
+    const image = event.target as HTMLImageElement;
+    const url = this.pages()[i];
+    if (url && !this.cleanedPages.has(url) && image.naturalWidth > 0) {
+      try {
+        const probe = document.createElement('canvas');
+        probe.width = probe.height = 12;
+        const ctx = probe.getContext('2d', { willReadFrequently: true })!;
+        ctx.imageSmoothingQuality = 'high';
+        const { top, bottom } = readerBannerBounds(image.naturalWidth, image.naturalHeight, (y, height) => {
+          ctx.drawImage(image, 0, y, image.naturalWidth, height, 0, 0, 12, 12);
+          return ctx.getImageData(0, 0, 12, 12).data;
+        });
+        if (top > 0 || bottom < image.naturalHeight) {
+          const output = document.createElement('canvas');
+          output.width = image.naturalWidth;
+          output.height = bottom - top;
+          output.getContext('2d')!.drawImage(image, 0, top, output.width, output.height, 0, 0, output.width, output.height);
+          this.cleanedPages.set(url, output.toDataURL('image/jpeg', 0.95));
+          // Angular updates src from pageUrl; reveal only after the cropped image loads.
+          this.loaded.update(s => { const next = new Set(s); next.delete(i); return next; });
+          return;
+        }
+      } catch { /* Cross-origin images without canvas access remain readable. */ }
+    }
     this.loaded.update(s => new Set(s).add(i));
     if (i === 0 && typeof window !== 'undefined' && window.scrollY > 40) {
       this.scrollToTopInstant();
